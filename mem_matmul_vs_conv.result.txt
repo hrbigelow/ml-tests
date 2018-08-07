@@ -26,3 +26,12 @@ zzzinput/filt/Initializer/random_uniform/min:0            []                  1 
 zzzinput/filt/Initializer/random_uniform/sub:0            []                  1        4
 zzzinput/input/mean:0                                     []                  1        4
 zzzinput/input/stddev:0                                   []                  1        4
+conv equal to mm? True
+
+
+This test reveals that the cnv1x1 approach has an extra 'Squeeze' tensor at a
+size that dominates the overall size.  Yet, I have used both approaches in my
+WaveNet implementation, and it seems there is no difference in GPU memory usage.
+
+
+

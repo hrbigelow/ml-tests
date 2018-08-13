@@ -175,9 +175,10 @@ class ConvType(object):
 
 
 def torch_padding(filter_sz, wanted_padding, is_inverse):
-    '''calculate value of 'padding' argument for torch convolutions.
+    '''calculate value of 'padding' argument for torch convolutions
+    for it to apply the wanted padding.
     '''
-    wing_sz = f_sz // 2
+    # wing_sz = f_sz // 2
 
     # What to do with this?
     # assert ct.lpad == ct.rpad
@@ -192,13 +193,17 @@ def torch_padding(filter_sz, wanted_padding, is_inverse):
 
 
 def torch_conv(conv_type, input):
+
+    '''use torch's F.conv1d and F.conv_transpose1d to produce the convolution
+    (or fractionally strided convolution), with all parameters determined from
+    conv_type, on the input'''
+
     def nest2(x):
         return np.expand_dims(np.expand_dims(x, 0), 0)
 
     ct = conv_type
     tinput = torch.tensor(nest2(input), dtype=torch.float64)
     tweight = torch.tensor(nest2(ct.filter(do_dilate=False)), dtype=torch.float64)
-    input_sz = len(input)
 
     # handles strange torch defintion of 'padding' for inverse convolutions
     tpad = torch_padding(ct.filter_size(do_dilate=True), ct.lpad(), ct.is_inverse)
@@ -211,12 +216,12 @@ def torch_conv(conv_type, input):
         conv = F.conv_transpose1d(
                 tinput, tweight, bias=None, stride=ct.stride,
                 padding=tpad, output_padding=0, groups=1,
-                dilation=ct.dilation + 1)
+                dilation=tdilation)
 
     else:
         conv = F.conv1d(
                 tinput, tweight, bias=None, stride=ct.stride,
-                padding=tpad, dilation=ct.dilation + 1,
+                padding=tpad, dilation=tdilation,
                 groups=1)
 
     def unnest2(x):
@@ -257,7 +262,8 @@ if __name__ == '__main__':
     input = np.random.randint(1, args.max_input_val, args.input_size)
     np.set_printoptions(linewidth=250)
 
-    sdpi = itertools.product(args.filters, args.strides, args.dilations, args.paddings, [True, False])
+    sdpi = itertools.product(args.filters, args.strides,
+            args.dilations, args.paddings, [True, False])
     
     for fil, st, dil, pad, inv in sdpi: 
         filt = [int(i) for i in fil.split(',')]
@@ -270,7 +276,7 @@ if __name__ == '__main__':
 
         ct = ConvType(filt, fri, st, inv, phase, dil, pad, pad)
         tc = torch_conv(ct, input)
-        i, p, mc_raw, mask = matrix_conv(ct, input)
+        i, p, mc_raw, mask = ct.conv(input)
         mc = mc_raw[mask == VALID_VAL]
         same = np.all(tc == mc)
 

@@ -33,9 +33,17 @@ with tf.name_scope('matmul'):
     mm = tf.matmul(input, filt_exp)
 
 # Both approaches give the same result
+run_meta = tf.RunMetadata()
+run_opts = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE,
+        output_partition_graphs=True)
+
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
-print('conv equal to mm? ' + str(sess.run(tf.reduce_all(tf.equal(conv, mm)))))
+#all_equal = tf.reduce_all(tf.equal(conv, mm))
+#print('conv equal to mm? ' + str(sess.run(all_equal,
+#    options=run_opts, run_metadata=run_meta)))
 
-print_tensor_sizes(sess)
+print(sess.run(tf.reduce_max(conv), options=run_opts, run_metadata=run_meta))
+#print_tensor_sizes(sess)
+print(str(run_meta))
 

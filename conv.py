@@ -1,31 +1,61 @@
-# Experiments with convolutions using a proof-of-principle approach In these
-# tests, a convolution is implemented as a single matrix multiplication.  the
-# main concepts of stride, filter width, dilation, fractional stride are all
-# implemented simply by designing the unrolled matrix.  This approach is
-# inspired by Naoki Shibuya's Medium article,
+# Experiments with convolutions using a proof-of-principle approach. 
+
+# In these tests, a convolution is implemented as a single, square matrix
+# multiplication of the input.  the main concepts of stride, filter width,
+# dilation, fractional stride, left and right padding are all implemented
+# simply by designing the matrix, in particular, choosing which elements are
+# zeros.  This approach is inspired by Naoki Shibuya's Medium article,
 # https://towardsdatascience.com/up-sampling-with-transposed-convolution-9ae4f2df52d0
 
-# The article represents each filter * input dot product as a sparse row of a
-# matrix, thus generating a matrix with as many rows as there are filter
-# positions.  I want to extend this idea, to use the matrix structure to illustrate
-# the different types of convolutions and deconvolutions.
+# Because the matrix is square, the output is the same size as the input, even
+# for cases of non-integer stride or fractional stride (up-sampling).  The
+# one-to-one correspondence between input and output elements makes explicit
+# the distinction between striding and padding effects.  It is defined as
+# follows:
 
-# In contrast to actual methods used in practice, the output is the same size
-# as the input, even for cases of up-sampling or down-sampling.  In these cases, the
-# extra elements of output or input are filled with NaN to show that they are only
-# placeholders.  The actual convolution or deconvolution operatio then can be derived
-# by
-# input = input[np.logical_not(np.isnan(input)]
-# output = output[np.logical_not(np.isnan(input)]
+# A single filter element is chosen as the 'reference' element using
+# filt_ref_index.  The output of a convolution is then assigned to the input
+# element that is covered by this reference element.
+
+# To recover the final convolution, a mask is provided for the output elements,
+# with values VALID_VAL, SKIP_VAL, and INVALID_VAL.  SKIP_VAL indicates that
+# the position was skipped due to stride.  INVALID_VAL indicates the position
+# wasn't a valid convolution due to the filter being off the end of the padded
+# input.
+
+# The final convolution is then: conv = conv_raw[mask # == VALID_VAL] 
 
 import numpy as np
 import torch
 from torch.nn import functional as F
 import itertools
+from sys import stderr
 
 VALID_VAL = 0 
 SKIP_VAL = -1
 INVALID_VAL = -2
+
+def remove_vals(x, *vals):
+    for v in vals:
+        x = x[x != v]
+    return x
+
+
+def dilate_index(i, dilation):
+    return i * (dilation + 1)
+
+
+def dilate_array(x, dilation, fill_value):
+    sz = len(x)
+    assert dilation >= 0
+
+    d = np.full([sz + (sz - 1) * dilation], fill_value=fill_value)
+    for p in range(sz):
+        dp = dilate_index(p, dilation)
+        d[dp] = x[p]
+        
+    return d
+
 
 class ConvType(object):
 
@@ -34,7 +64,7 @@ class ConvType(object):
         assert phase < stride
         assert dilation >= 0
         assert filt_ref_index >= 0 and filt_ref_index < len(filt)
-        assert lpad >= 0
+        assert lpad >= 0 
         assert rpad >= 0
 
         self.filt = np.array(filt, dtype=np.float)
@@ -43,8 +73,20 @@ class ConvType(object):
         self.is_inverse = is_inverse
         self.dilation = dilation
         self.phase = phase
-        self.lpad = lpad
-        self.rpad = rpad
+        self._lpad = lpad
+        self._rpad = rpad
+        
+    def lpad(self):
+        '''truncates any left padding that is unnecessary to produce a valid
+        convolution at the first input position 
+        '''
+        return min(self._lpad, self.filter_ref_index(do_dilate=True))
+
+    def rpad(self):
+        return min(self._rpad,
+                dilate_index(len(self.filt) - 1, self.dilation) - \
+                        self.filter_ref_index(do_dilate=True))
+
 
     def filter(self, do_dilate):
         if do_dilate:
@@ -63,143 +105,122 @@ class ConvType(object):
             return self.filt_ref_index
 
 
-    def valid_pos(self, input_sz, ref_pos):
-        '''placing the filter's reference position at ref_pos.
+    def valid_pos(self, input_sz, pos):
+        '''
+        if the filter's reference element is placed at pos, 
         return true if the filter completely overlaps the padded input
         '''
-        fi = self.filter_ref_index(True)
-        fs = self.filter_size(True)
-        filt_beg = ref_pos - fi 
-        filt_end = ref_pos + fs - fi
-        input_beg = -self.lpad
-        input_end = input_sz + self.rpad
+        fi = self.filter_ref_index(do_dilate=True)
+        fs = self.filter_size(do_dilate=True)
+        filt_beg = pos - fi 
+        filt_end = pos + fs - fi
+        input_beg = -self.lpad()
+        input_end = input_sz + self.rpad()
         return input_beg <= filt_beg and filt_end <= input_end 
 
 
-def remove_vals(x, *vals):
-    for v in vals:
-        x = x[x != v]
-    return x
+    def conv_mat(self, input_sz):
+        '''
+        outputs:
+        mat (input_sz x input_sz)
+        mask (input_sz)
 
+        use as:
+        conv_raw = np.matmul(mat, input) 
+        conv = conv_raw[mask == VALID_VAL] 
+        '''
+        # check arguments
+        assert input_sz >= 0
 
-def dilate_array(x, dilation, fill_value):
-    sz = len(x)
-    assert dilation >= 0
+        do_dilate = True
+        fc = self.filter_ref_index(do_dilate)
+        fci = self.filter_size(do_dilate) - fc 
+        filt = self.filter(do_dilate)
 
-    d = np.full([sz + (sz - 1) * dilation], fill_value=fill_value)
-    for p in range(sz):
-        dp = dilate_index(p, dilation)
-        d[dp] = x[p]
-        
-    return d
+        mat = np.zeros([input_sz, input_sz])
+        mask = np.zeros([input_sz])
 
-def dilate_index(i, dilation):
-    return i * (dilation + 1)
+        for r in range(input_sz):
+            if (not self.is_inverse) and r % self.stride != self.phase:
+                mat[r,:] = np.full([input_sz], 0)
+                mask[r] = SKIP_VAL
+                continue
 
+            c = r
+            if self.valid_pos(input_sz, c):
+                min_off = min(fc, c)
+                ub_off = min(fci, input_sz - c) 
+                for o in range(-min_off, ub_off):
+                    mat[r,c + o] = filt[fc + o]
+                mask[r] = VALID_VAL
+            else:
+                mat[r,:] = np.full([input_sz], 0)
+                mask[r] = INVALID_VAL
 
-    
+        return mat, mask
 
-
-def make_conv_mat(conv_type, input_sz):
-    '''generate a square matrix M such that:
-    raw = np.matmul(M, input) 
-    conv = remove_nans(raw) 
-    where conv represents the result of a convolution using the
-    given parameters
-    '''
-    # check arguments
-    assert input_sz >= 0
-    ct = conv_type
-
-    do_dilate = True
-    fc = ct.filter_ref_index(do_dilate)
-    fci = ct.filter_size(do_dilate) - fc 
-    filt = ct.filter(do_dilate)
-
-    mat = np.zeros([input_sz, input_sz])
-    mask = np.zeros([input_sz])
-
-    for r in range(input_sz):
-        if (not ct.is_inverse) and r % ct.stride != ct.phase:
-            mat[r,:] = np.full([input_sz], 0)
-            mask[r] = SKIP_VAL
-            continue
-
-        c = r
-        if ct.valid_pos(input_sz, c):
-            min_off = min(fc, c)
-            ub_off = min(fci, input_sz - c) 
-            for o in range(-min_off, ub_off):
-                mat[r,c + o] = filt[fc + o]
-            mask[r] = VALID_VAL
+    def conv(self, input):
+        # apply stride to the input rather than the output when doing the
+        # inverse.
+        if self.is_inverse:
+            processed = dilate_array(input, self.stride - 1, 0)
         else:
-            mat[r,:] = np.full([input_sz], 0)
-            mask[r] = INVALID_VAL
+            processed = input 
 
-    return mat, mask
+        mat, mask = self.conv_mat(len(processed))
+        conv = np.matmul(mat, processed)
+
+        return input, processed, conv, mask 
 
 
-def matrix_conv(conv_type, input):
-    # apply stride to the input rather than the output when doing the
-    # inverse.
-    if conv_type.is_inverse:
-        processed = dilate_array(input, conv_type.stride - 1, 0)
+
+def torch_padding(filter_sz, wanted_padding, is_inverse):
+    '''calculate value of 'padding' argument for torch convolutions.
+    '''
+    wing_sz = f_sz // 2
+
+    # What to do with this?
+    # assert ct.lpad == ct.rpad
+
+    # F.conv_transpose1d adds kernel_size - 1 - p actual padding, for padding=p
+    if is_inverse:
+        tpad = filter_sz - 1 - wanted_padding  
     else:
-        processed = input 
+        tpad = wanted_padding
 
-    mat, mask = make_conv_mat(conv_type, len(processed))
-    conv = np.matmul(mat, processed)
-
-    return input, processed, conv, mask 
-
-
+    return tpad
 
 
 def torch_conv(conv_type, input):
     def nest2(x):
         return np.expand_dims(np.expand_dims(x, 0), 0)
-    def unnest2(x):
-        return np.squeeze(np.squeeze(x, 0), 0)
 
     ct = conv_type
-    assert ct.lpad == ct.rpad
     tinput = torch.tensor(nest2(input), dtype=torch.float64)
-    tweight = torch.tensor(nest2(ct.filter(False)), dtype=torch.float64)
+    tweight = torch.tensor(nest2(ct.filter(do_dilate=False)), dtype=torch.float64)
     input_sz = len(input)
-    f_sz = ct.filter_size(True)
 
-    assert f_sz % 2 == 1 # must be odd-length filter
-    wing_sz = (f_sz - 1) // 2
+    # handles strange torch defintion of 'padding' for inverse convolutions
+    tpad = torch_padding(ct.filter_size(do_dilate=True), ct.lpad(), ct.is_inverse)
 
-    # ignore extra padding beyond what is needed to place the center of the
-    # filter at each input position.
-    lpad_used = min(ct.lpad, wing_sz)
-
-    # F.conv_transpose1d adds k - 1 - p actual padding, for
-    # padding=p, kernel_size=k
-    tpad = f_sz - 1 - lpad_used 
+    # by convention, torch minimum dilation is 1
+    tdilation = ct.dilation + 1
 
     # torch minimum dilation = 1 by convention
     if ct.is_inverse:
         conv = F.conv_transpose1d(
-                tinput,
-                tweight,
-                bias=None,
-                stride=ct.stride,
-                padding=tpad,
-                output_padding=0,
-                groups=1,
+                tinput, tweight, bias=None, stride=ct.stride,
+                padding=tpad, output_padding=0, groups=1,
                 dilation=ct.dilation + 1)
 
     else:
         conv = F.conv1d(
-                tinput,
-                tweight,
-                bias=None,
-                stride=ct.stride,
-                padding=lpad_used,
-                dilation=ct.dilation + 1,
+                tinput, tweight, bias=None, stride=ct.stride,
+                padding=tpad, dilation=ct.dilation + 1,
                 groups=1)
+
+    def unnest2(x):
+        return np.squeeze(np.squeeze(x, 0), 0)
 
     nconv = unnest2(conv.numpy())
     return nconv

@@ -1,0 +1,45 @@
+A Matrix Multiplication view of Convolutions
+
+Suppose you have a 1D convolution filter:
+
+[filter.png]
+[1D convolution filter]
+
+Each color represents a distinct value.  The value could be a scalar or a
+matrix.  For the purposes of this article, we just consider it to be an
+abstract "element" that can be multiplied with an input element.
+
+Using the same color-coded values (with gray representing zero), here is
+picture of a matrix multiply style of convolution using this filter.
+
+[mat_s1_ph0_invFalse_lp0_rp0_d0.png]
+[Stride 1, 0 Left padding, 0 Right padding 0, Green reference element]
+
+The green element in the filter is arbitrarily designated as the "reference"
+element.  The output element of the convolution is mapped to whichever input
+element is covered by this element.  
+
+The square matrix produces an output the same size as the input.  Due to the
+lack of padding, the first two and last two positions are "invalid".  The
+output shows zero-valued placeholders in these positions.  But the one-to-one
+correspondence between input and output is clear.  This is helpful to
+distinguish between edge effects, stride, and inverse stride, as we will see
+below. 
+
+
+Here are more examples.  These are all generated with a script at
+https://github.com/hrbigelow/ml-tests/blob/master/conv.py.  The script
+generates each matrix based on the given filter and convolution parameters.  It
+then tests the result of a convolution using PyTorch's torch.nn.functional
+conv1d and conv_transpose1d and the matrix multiply approach outlined here.
+
+
+[mat_s1_ph0_invFalse_lp2_rp1_d0.png]
+[Stride 1, Left padding 2, Right padding 1]
+
+[mat_s2_ph0_invFalse_lp0_rp0_d0.png]
+[Stride 2, Left padding 0, Right padding 1]
+
+[mat_s2_ph1_invFalse_lp0_rp0_d0.png]
+[Stride 2, Phase 1, Left padding 0, Right padding 0]
+

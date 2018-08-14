@@ -45,30 +45,28 @@ def dilate_index(i, dilation):
     return i * (dilation + 1)
 
 
-def dilate_array(x, dilation, fill_value):
-    sz = len(x)
-    assert dilation >= 0
-
-    d = np.full([sz + (sz - 1) * dilation], fill_value=fill_value)
-    for p in range(sz):
-        dp = dilate_index(p, dilation)
-        d[dp] = x[p]
+def dilate_array(x, dilation, fill_value=0):
+    d = np.full([dilate_index(len(x) - 1, dilation) + 1],
+            fill_value=fill_value)
+    for i,v in enumerate(x):
+        dp = dilate_index(i, dilation)
+        d[dp] = v 
         
     return d
 
 
 class ConvType(object):
 
-    def __init__(self, filt, filt_ref_index, stride, is_inverse, phase, dilation, lpad, rpad):
+    def __init__(self, filt, filt_ctr, stride, is_inverse, phase, dilation, lpad, rpad):
         assert stride >= 1
         assert phase < stride
         assert dilation >= 0
-        assert filt_ref_index >= 0 and filt_ref_index < len(filt)
+        assert filt_ctr >= 0 and filt_ctr < len(filt)
         assert lpad >= 0 
         assert rpad >= 0
 
         self.filt = np.array(filt, dtype=np.float)
-        self.filt_ref_index = filt_ref_index 
+        self.filt_ctr = filt_ctr 
         self.stride = stride
         self.is_inverse = is_inverse
         self.dilation = dilation
@@ -87,7 +85,6 @@ class ConvType(object):
                 dilate_index(len(self.filt) - 1, self.dilation) - \
                         self.filter_ref_index(do_dilate=True))
 
-
     def filter(self, do_dilate):
         if do_dilate:
             return dilate_array(self.filt, self.dilation, 0)
@@ -97,13 +94,11 @@ class ConvType(object):
     def filter_size(self, do_dilate):
         return len(self.filter(do_dilate))
 
-
     def filter_ref_index(self, do_dilate):
         if do_dilate:
-            return dilate_index(self.filt_ref_index, self.dilation)
+            return dilate_index(self.filt_ctr, self.dilation)
         else:
-            return self.filt_ref_index
-
+            return self.filt_ctr
 
     def valid_pos(self, input_sz, pos):
         '''
@@ -118,7 +113,6 @@ class ConvType(object):
         input_end = input_sz + self.rpad()
         return input_beg <= filt_beg and filt_end <= input_end 
 
-
     def conv_mat(self, input_sz):
         '''
         outputs:
@@ -132,10 +126,9 @@ class ConvType(object):
         # check arguments
         assert input_sz >= 0
 
-        do_dilate = True
-        fc = self.filter_ref_index(do_dilate)
-        fci = self.filter_size(do_dilate) - fc 
-        filt = self.filter(do_dilate)
+        fc = self.filter_ref_index(do_dilate=True)
+        fci = self.filter_size(do_dilate=True) - fc 
+        filt = self.filter(do_dilate=True)
 
         mat = np.zeros([input_sz, input_sz])
         mask = np.zeros([input_sz])
@@ -178,18 +171,11 @@ def torch_padding(filter_sz, wanted_padding, is_inverse):
     '''calculate value of 'padding' argument for torch convolutions
     for it to apply the wanted padding.
     '''
-    # wing_sz = f_sz // 2
-
-    # What to do with this?
-    # assert ct.lpad == ct.rpad
-
     # F.conv_transpose1d adds kernel_size - 1 - p actual padding, for padding=p
     if is_inverse:
-        tpad = filter_sz - 1 - wanted_padding  
+        return filter_sz - 1 - wanted_padding  
     else:
-        tpad = wanted_padding
-
-    return tpad
+        return wanted_padding
 
 
 def torch_conv(conv_type, input):

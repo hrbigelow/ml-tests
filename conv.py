@@ -1,5 +1,7 @@
+import tensorflow as tf
 import convtype as ctp
 import torch_conv
+import tf_conv
 import numpy as np
 import itertools
 from sys import stderr
@@ -13,18 +15,18 @@ def get_args():
     parser.add_argument('--strides', '-st', nargs='+', type=int, metavar='INT',
             help='Stride for the convolution.  If --is-inverse, this is'
             ' the input stride', default=1)
-    parser.add_argument('--dilations', '-di', nargs='+', type=int, metavar='INT',
-            help='Dilation for the filter', default=[0])
-    parser.add_argument('--filters', '-f', nargs='+', type=str, metavar='STR',
+    parser.add_argument('--dilations', '-dil', nargs='+', type=int, metavar='INT',
+            help='Dilation for the filter', default=[1])
+    parser.add_argument('--filters', '-fil', nargs='+', type=str, metavar='STR',
             help='comma-separated list of positive integers, '
             'to be used as the convolution filter')
-    parser.add_argument('--paddings', '-pa', nargs='+', type=int, metavar='INT',
+    parser.add_argument('--paddings', '-pad', nargs='+', type=int, metavar='INT',
             help='padding for both left and right')
-    parser.add_argument('--inverses', '-in', nargs='+', type=int, metavar='INT',
+    parser.add_argument('--inverses', '-inv', nargs='+', type=int, metavar='INT',
             help='enter 0 for normal convolution, 1 for inverse, or both')
     parser.add_argument('--max-input-val', '-m', type=int, metavar='INT',
             help='maximum value in input cells')
-    parser.add_argument('--ref-indices', '-r', nargs='+', type=int, metavar='INT',
+    parser.add_argument('--ref-indices', '-ref', nargs='+', type=int, metavar='INT',
             help='filter reference index')
 
     return parser.parse_args()
@@ -32,6 +34,7 @@ def get_args():
 
 
 if __name__ == '__main__':
+    tf.enable_eager_execution()
     args = get_args()
     input = np.random.randint(1, args.max_input_val, args.input_size)
     np.set_printoptions(linewidth=250)
@@ -61,19 +64,31 @@ if __name__ == '__main__':
                     file=stderr)
             continue
 
-        tc, cmd_string = torch_conv(ct, input)
+        if ct.padding_type() not in ('VALID', 'SAME'):
+            print('ConvType must be VALID or SAME to compare with TensorFlow convolution',
+                    file=stderr)
+            continue
+
+        trc, tr_cmd = torch_conv.conv(ct, input)
+        with tf.device('/cpu:0'):
+            tfc, tf_cmd = tf_conv.conv(ct, input)
         i, p, mc_raw, mask = ct.conv(input)
         mc = mc_raw[mask == ctp.VALID_VAL]
-        same = np.all(tc == mc)
+        tr_same = np.all(trc == mc)
+        tf_same = np.all(tfc == mc)
+
 
         # if tc.shape != mc.shape:
             # print('Error: tc: {}, mc: {}'.format(tc.shape, mc.shape))
-        if not same:
+        if not tr_same:
             #print('Not the same:')
             #print('in: ', input)
-            print('tc: ', tc)
+            print('trc: ', trc)
+            print('mc: ', mc)
+        if not tf_same:
+            print('tfc: ', tfc)
             print('mc: ', mc)
 
         print('\t'.join(map(str, [inv, ct.filter(False), args.input_size,
-            st, dil, pad, ref, phase, same, cmd_string])))
+            st, dil, pad, ref, phase, tr_same, tf_same, tr_cmd, tf_cmd])))
 

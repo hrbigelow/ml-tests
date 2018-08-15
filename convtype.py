@@ -36,7 +36,7 @@ def remove_vals(x, *vals):
 
 
 def dilate_index(i, dilation):
-    return i * (dilation + 1)
+    return i * (dilation)
 
 
 def dilate_array(x, dilation, fill_value=0):
@@ -73,7 +73,7 @@ class ConvType(object):
     def bad_input(self):
         return (self.stride < 1
         or self.phase > self.stride 
-        or self.dilation < 0
+        or self.dilation < 1
         or self.filt_ctr < 0
         or self.filt_ctr >= len(self.filt)
         or self._lpad < 0
@@ -82,7 +82,13 @@ class ConvType(object):
     def padding_type(self):
         '''return VALID, SAME, or CUSTOM based on the filter size
         and paddings requested'''
-        pass
+        fri = self.filter_ref_index(do_dilate=True)
+        f_sz = self.filter_size(do_dilate=True)
+        fri_rev = f_sz - 1 - fri
+
+        if self._lpad == self._rpad == 0: return 'VALID'
+        elif self._lpad == fri and self._rpad == fri_rev: return 'SAME'
+        else: return 'CUSTOM'
 
     def lpad(self):
         '''truncates any left padding that is unnecessary to produce a valid
@@ -173,7 +179,7 @@ class ConvType(object):
         # apply stride to the input rather than the output when doing the
         # inverse.
         if self.is_inverse:
-            processed = dilate_array(input, self.stride - 1, 0)
+            processed = dilate_array(input, self.stride, 0)
         else:
             processed = input 
 

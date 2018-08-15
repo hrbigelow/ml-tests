@@ -1,8 +1,9 @@
 import torch
 from torch.nn import functional as F
+import numpy as np
 
 
-def torch_padding(filter_sz, wanted_padding, is_inverse):
+def fix_padding(filter_sz, wanted_padding, is_inverse):
     '''calculate value of 'padding' argument for torch convolutions
     for it to apply the wanted padding.
     '''
@@ -13,7 +14,7 @@ def torch_padding(filter_sz, wanted_padding, is_inverse):
         return wanted_padding
 
 
-def torch_conv(conv_type, input):
+def conv(conv_type, input):
 
     '''use torch's F.conv1d and F.conv_transpose1d to produce the convolution
     (or fractionally strided convolution), with all parameters determined from
@@ -28,17 +29,13 @@ def torch_conv(conv_type, input):
 
     # handles strange torch defintion of 'padding' for inverse convolutions
     wanted_pad = max(ct.lpad(), ct.rpad())
-    tpad = torch_padding(ct.filter_size(do_dilate=True), wanted_pad, ct.is_inverse)
+    tpad = fix_padding(ct.filter_size(do_dilate=True), wanted_pad, ct.is_inverse)
 
-    # by convention, torch minimum dilation is 1
-    tdilation = ct.dilation + 1
-
-    # torch minimum dilation = 1 by convention
     if ct.is_inverse:
         conv = F.conv_transpose1d(
                 tinput, tweight, bias=None, stride=ct.stride,
                 padding=tpad, output_padding=0, groups=1,
-                dilation=tdilation)
+                dilation=ct.dilation)
         cmd_string = 'F.conv_transpose1d(input, weight, bias=None, stride={}, ' \
         'padding={}, output_padding=0, groups=1, dilation={})'.format(ct.stride,
                 tpad, tdilation)
@@ -46,10 +43,10 @@ def torch_conv(conv_type, input):
     else:
         conv = F.conv1d(
                 tinput, tweight, bias=None, stride=ct.stride,
-                padding=tpad, dilation=tdilation,
+                padding=tpad, dilation=ct.dilation,
                 groups=1)
         cmd_string = 'F.conv1d(input, weight, bias=None, stride={}, padding={}, ' \
-        'dilation={}, groups=1)'.format(ct.stride, tpad, tdilation)
+        'dilation={}, groups=1)'.format(ct.stride, tpad, ct.dilation)
 
     def unnest2(x):
         return np.squeeze(np.squeeze(x, 0), 0)

@@ -1,4 +1,4 @@
-import conv
+import convtype as ctp
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import numpy as np
@@ -15,16 +15,16 @@ def make_colormap(color_names, map_name):
 if __name__ == '__main__':
 
     filt = [1,2,3,4,5]
-    input_sz = 12 
+    input_sz = 17 
 
     convs = [
-            conv.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
-            conv.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
-            conv.ConvType(filt, 2, stride=2, is_inverse=False, phase=1, dilation=0, lpad=0, rpad=0),
-            conv.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=1, lpad=0, rpad=0),
-            conv.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=2, rpad=1),
-            conv.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
-            conv.ConvType(filt, 2, stride=3, is_inverse=True, phase=0, dilation=0, lpad=2, rpad=2),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=1, dilation=0, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=2, rpad=1),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=0, lpad=2, rpad=1),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=1, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=True, phase=0, dilation=0, lpad=0, rpad=0),
             ]
 
     zero_color = [ 'xkcd:silver' ]
@@ -41,14 +41,15 @@ if __name__ == '__main__':
 
 
     def make_plot(ct, path, show_in_out):
-        small_space = 1.0 
+        small_space = 1.1 
+        large_space = 1.3
 
         last_row_x = input_sz - 1
         # M * I = O
         times_symbol_x = last_row_x + small_space
         in_x = times_symbol_x + small_space
-        equal_symbol_x = in_x + small_space
-        out_x = equal_symbol_x + small_space
+        equal_symbol_x = in_x + large_space
+        out_x = equal_symbol_x + large_space
 
         mid_y = (input_sz - 1) / 2
 
@@ -93,6 +94,6 @@ if __name__ == '__main__':
 
     for i,ct in enumerate(convs):
         fname = 'mat_s{}_ph{}_inv{}_lp{}_rp{}_d{}.png'.format(
-                ct.stride, ct.phase, ct.is_inverse, ct.lpad(), ct.rpad(), ct.dilation)
+                ct.stride, ct.phase, int(ct.is_inverse), ct.lpad(), ct.rpad(), ct.dilation)
         make_plot(ct, fname, True) 
 

@@ -1,6 +1,8 @@
 # Compare Torch convolutions with the matrix multiply approach
+import tensorflow as tf
 import convtype as ctp
 import torch_conv
+import tf_conv
 import numpy as np
 from sys import stderr
 
@@ -23,11 +25,12 @@ if __name__ == '__main__':
 
     args = get_args()
     np.set_printoptions(linewidth=250)
+    tf.enable_eager_execution()
 
     print('\t'.join(['FILT', 'INV', 'ILEN', 'OLEN', 'STRIDE',
-        'DIL', 'PAD', 'MATCH', 'CMD_STRING']))
+        'DIL', 'PAD', 'MATCH', 'CMD']))
 
-    comps = []
+    combos = []
     for fil_str in args.filters:
         filt = [int(i) for i in fil_str.split(',')]
         filt_sz = len(filt)
@@ -37,9 +40,10 @@ if __name__ == '__main__':
                 for dil in range(1, max_dil + 1):
                     for pad in ('VALID', 'SAME'):
                         for api in ('Torch', 'TensorFlow'):
-                            comps.append((filt, inv, st, dil, pad, api))
+                            combos.append((filt, inv, st, dil, pad, api))
+    print('Finished building combinations')
 
-    for filt, inv, st, dil, pad, api in comps:
+    for filt, inv, st, dil, pad, api in combos:
         if inv:
             if api == 'Torch':
                 ct = torch_conv.get_ct_transpose(args.matrix_size, filt, st, pad, dil)
@@ -49,8 +53,9 @@ if __name__ == '__main__':
             if api == 'Torch':
                 ct = torch_conv.get_ct(args.matrix_size, filt, st, pad, dil)
             else:
-                ct = tf_conv.get_ct_transpose(args.matrix_size, filt, st, pad, dil)
+                ct = tf_conv.get_ct(args.matrix_size, filt, st, pad, dil)
 
+        assert ct.is_inverse == inv
         input_sz = ct.input_size()
         input = np.random.randint(1, args.max_input_val, input_sz)
 
@@ -62,13 +67,13 @@ if __name__ == '__main__':
         if api == 'Torch':
             conv, cmd = torch_conv.conv(input, filt, inv, st, pad, dil)
         else:
-            conv, cmd = tf_conv.conv(input, filt, inv, st, pad, dil)
+            conv, cmd = tf_conv.conv(input, args.matrix_size, filt, inv, st, pad, dil)
         same = np.all(conv == mc)
         if not same:
             print('input: ', input)
             print('mask : ', mask)
-            print('torch: ', conv)
-            print('matml: ', mc)
+            print('{}: {}'.format(api, conv))
+            print('matml_mc: ', mc)
 
         print('\t'.join(map(str, [ct.filter(False).astype(int), inv, input_sz,
             len(conv), st, dil, pad, same, cmd])))

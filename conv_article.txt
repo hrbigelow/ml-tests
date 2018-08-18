@@ -1,0 +1,31 @@
+A Matrix Multiplication view of Convolutions
+
+Convolutions and transposed convolutions are confusing to me, and I've found
+this visualization useful for sorting out all of the variations.  I hope you
+find it useful as well!
+
+In this short note, I show that 1D convolutions by PyTorch and TensorFlow are 
+replicated by a two-step calculation: multiply input by a sparse square matrix,
+then apply a boolean mask to remove elements from the result.  In particular, I
+show the relationship between the various settings of stride, dilation, padding
+that correspond with the mask.
+
+Then, I show that 1D transpose convolutions can be replicated by a somewhat
+inverse process: "unmask" the input (insert zeros where mask is false), then
+multiply by the transpose of the same matrix.
+
+The matrix is easily constructed from the filter as follows.  Supposing you
+have this filter:
+
+[filter.png]
+[1D convolution filter]
+
+construct the matrix by scanning the filter across each position:
+
+[mat_s1_ph0_inv0_lp0_rp0_d0.png]
+[square matrix with filter weights scanned across each row]
+
+
+
+
+

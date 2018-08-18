@@ -96,7 +96,9 @@ class ConvType(object):
                 raise ValueError
 
     def set_phase(self, phase):
-        '''sets the phase according to various strategies'''
+        '''sets the phase according to various strategies
+        LEFTMAX: phase that retains first valid left-most position
+        LEFTMOST_AVOID_PADDING'''
         if isinstance(phase, str):
             if phase == 'LEFTMAX':
                 self.phase, _ = self.ref_valid_bounds() 
@@ -197,6 +199,7 @@ class ConvType(object):
         mask = self.mask()
         mat = self.conv_mat()
         bool_mask = (mask == 0)
+        print(bool_mask)
 
         if self.is_inverse:
             processed = unmask(input, bool_mask, 0)

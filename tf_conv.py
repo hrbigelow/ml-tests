@@ -19,7 +19,7 @@ def get_ct_transpose(matrix_sz, filt, stride, padding_type, dilation):
     return ctyp.ConvType(matrix_sz, filt, filt_ctr,
             stride, True, phase, dilation, padding_type)
 
-def conv(input, filt, inv, st, pad, dil):
+def conv(input, matrix_sz, filt, inv, st, pad, dil):
     '''implement the equivalent TensorFlow convolution or deconvolution based
     on the parameters in conv_type'''
     def add_dims(ten, *dims):
@@ -27,15 +27,11 @@ def conv(input, filt, inv, st, pad, dil):
             ten = tf.expand_dims(ten, d)
         return ten
 
-    ct = conv_type
     assert tf.executing_eagerly()
     
     # B x W x C
     input_ten = add_dims(tf.constant(input, dtype=tf.float64), 0, 2)
-    # print('input_ten.shape = ', input_ten.shape)
-
-    filt_ten = add_dims(tf.constant(ct.filter(do_dilate=False), dtype=tf.float64), 1, 2) 
-    # print('filt_ten.shape = ', filt_ten.shape)
+    filt_ten = add_dims(tf.constant(filt, dtype=tf.float64), 1, 2) 
 
     strides = [st]
     dilation = [dil]
@@ -44,20 +40,20 @@ def conv(input, filt, inv, st, pad, dil):
         print('tf_conv: cannot execute with {} padding'.format(pad), file=stderr)
         return (np.array([]), 'Not executed')
 
-    if ct.is_inverse:
-        output_shape = tf.constant([1, ct.matrix_sz, 1])
-        # conv_ten = tf.constant([[1, 2]])
-        print(cmd_string)
-        conv_ten = conv1d_transpose(input_ten, filt_ten, output_shape, st, pad)
-        cmd = 'tf.contrib.nn.conv1d_transpose(value=input, filter=filter, ' \
-                'output_shape={}, stride={}, padding={})'.format(
-                        str(output_shape.numpy()), st, pad)
-    else:
-        conv_ten = convolution(input_ten, filt_ten, pad, st, dil) 
-        cmd = 'tf.nn.convolution(input=input, filter=filter, ' \
-                'padding={}, strides={}, dilation_rate={})'.format(
-                pad, st, dil)
+    with tf.device('/cpu:0'):
+        if inv:
+            output_shape = tf.constant([1, matrix_sz, 1])
+            conv_ten = conv1d_transpose(input_ten, filt_ten, output_shape, st, pad)
+            cmd = 'tf.contrib.nn.conv1d_transpose(value=input, filter=filter, ' \
+                    'output_shape={}, stride={}, padding={})'.format(
+                            str(output_shape.numpy()), st, pad)
+        else:
+            conv_ten = convolution(input_ten, filt_ten, pad, strides, dilation) 
+            cmd = 'tf.nn.convolution(input=input, filter=filter, ' \
+                    'padding={}, strides={}, dilation_rate={})'.format(
+                    pad, str(strides), str(dilation))
 
-    conv = tf.squeeze(conv_ten).numpy()
+        # only squeeze B and C, leaving W intact.
+        conv = tf.squeeze(conv_ten, [0,2]).numpy()
     return conv, cmd
 

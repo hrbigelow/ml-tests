@@ -2,6 +2,7 @@ import convtype as ctp
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import numpy as np
+from sys import stderr
 
 def make_colormap(color_names, map_name):
     color_map = [
@@ -18,14 +19,20 @@ if __name__ == '__main__':
     input_sz = 17 
 
     convs = [
-            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
-            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=0, lpad=0, rpad=0),
-            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=1, dilation=0, lpad=0, rpad=0),
-            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=0, lpad=2, rpad=1),
-            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=0, lpad=2, rpad=1),
             ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=1, lpad=0, rpad=0),
-            ctp.ConvType(filt, 2, stride=2, is_inverse=True, phase=0, dilation=0, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=1, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=1, dilation=1, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=1, lpad=2, rpad=1),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=False, phase=0, dilation=1, lpad=2, rpad=1),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=2, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=2, is_inverse=True, phase=0, dilation=1, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=True, phase=0, dilation=1, lpad=0, rpad=0),
+            ctp.ConvType(filt, 2, stride=1, is_inverse=False, phase=0, dilation=1, lpad=0, rpad=0),
             ]
+
+    if any(map(lambda x: x.bad_input(), convs)):
+        print('Bad input for one or more convtypes', file=stderr)
+        exit(1)
 
     zero_color = [ 'xkcd:silver' ]
     filter_colors = [

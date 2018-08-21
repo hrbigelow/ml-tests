@@ -1,31 +1,155 @@
 A Matrix Multiplication view of Convolutions
 
-Convolutions and transposed convolutions are confusing to me, and I've found
-this visualization useful for sorting out all of the variations.  I hope you
-find it useful as well!
+Convolutions and, in particular transposed convolutions are confusing to me,
+and I've found this visualization useful for sorting out all of the variations.
+I hope you find it useful as well.
 
-In this short note, I show that 1D convolutions by PyTorch and TensorFlow are 
-replicated by a two-step calculation: multiply input by a sparse square matrix,
-then apply a boolean mask to remove elements from the result.  In particular, I
-show the relationship between the various settings of stride, dilation, padding
-that correspond with the mask.
+In this short note, I show that 1D convolutions and transpose convolutions
+calculated by PyTorch and TensorFlow can be replicated by simply multiplying
+the input by a sparse square matrix.  Optionally, the input or output is
+processed by a mask. 
 
-Then, I show that 1D transpose convolutions can be replicated by a somewhat
-inverse process: "unmask" the input (insert zeros where mask is false), then
-multiply by the transpose of the same matrix.
+[The Matrix]
 
-The matrix is easily constructed from the filter as follows.  Supposing you
-have this filter:
+The matrix is a sparse square matrix, with one copy of the filter elements
+on each row, centered around the diagonal.  For a filter like this:
 
 [filter.png]
 [1D convolution filter]
 
-construct the matrix by scanning the filter across each position:
+the matrix would be:
 
 [mat_s1_ph0_inv0_lp0_rp0_d0.png]
 [square matrix with filter weights scanned across each row]
 
+Multiplying this matrix by a vector of input elements is equivalent to
+positioning the center of the filter on each input element and performing
+the convolution, collecting the output.
 
+conv_pre = np.matmul(matrix, input)
+conv_mm = do_mask(conv_pre, mask)
+conv_tf = ...
+conv_pt = ...
+
+
+The transpose convolution does the same thing, except multiplies the input by
+the transpose of the matrix.
+
+[Upsampling, downsampling and the mask]
+
+The above example of convolution or transpose corresponds to stride=1,
+padding=SAME.  For other variations, a mask is used.  For convolutions, a mask
+filters out some of the output elements due to stride > 1 or filter positions
+that are invalid.
+
+For 1D transpose convolutions, the process is somewhat inverse: the input is
+augmented with zeros (explained below), and then multiplied by the transpose of
+the matrix.  For instance:
+
+input_aug = un_mask(input, mask)
+tconv_mm = np.matmul(matrix.transpose(), input_aug)
+tconv_tf = ...
+tconv_pt = ...
+
+with:
+
+def do_mask(ary, mask):
+    '''remove elements where False in mask'''
+    return ary[np.where(mask)]
+
+def un_mask(ary, mask):
+    '''insert zeros where False in mask'''
+    it = iter(ary)
+    return np.array([next(it) if m else 0 for m in mask])
+
+a = np.array([1,2,3])
+m = np.array([True, False, False, True, True])
+u = un_mask(a, m)  # [1, 0, 0, 2, 3]
+b = do_mask(u, m)  # [1, 2, 3]
+assert all(b == a)
+
+
+[One-to-one correspondence between input and output]
+
+One nice feature of this conception of convolution or transposed convolution is
+that it defines a correspondence between input and output elements.  Both the
+choice of stride and padding affect the number of output elements produced.
+But, this correspondence makes clear which elements are omitted (or up-sampled)
+due to stride or edge effects. 
+
+For instance, here are two convolutions (T = True, _ = False):
+
+[_, _, T, _, T, _, T, _, T, _, _, _] # stride 2, padding = VALID
+
+[_, T, _, _, T, _, _, T, _, _, T, _] # stride 3, padding = SAME
+
+Both of these cases give four output elements.  But we can see at a glance the
+difference in where the information derives. 
+
+
+Choice of stride and padding affect the mask but not the matrix.  Also, a
+convolution and transposed convolution using the same stride and padding
+settings also use the same mask. 
+
+On the other hand, dilation of the filter has no effect on the mask.  But it
+affects the matrix, since the matrix is entirely determined by the filter.
+To illustrate, suppose you have this filter:
+
+[dilated_filter.png]
+[filter of size 5 with dilation=2]
+
+The matrix would be:
+
+[dilated_matrix.png]
+[matrix with a filter size 5, dilation=2]
+
+Everything else about the calculation would be the same, however.  How to
+construct the mask from stride and padding settings, and how to apply it in the
+case of convolution or transposed convolution.
+
+[Particulars of TensorFlow and PyTorch convolutions]
+
+Note that the rules for constructing the mask are still underdetermined.  For
+instance, here are all possible masks for stride=3, padding=SAME, filter length
+5, and input length 13:
+
+[T, _, _, T, _, _, T, _, _, T, _, _, T] # phase 0, output size 5
+[_, T, _, _, T, _, _, T, _, _, T, _, _] # phase 1, output size 4
+[_, _, T, _, _, T, _, _, T, _, _, T, _] # phase 2, output size 4
+
+TensorFlow chooses phase 0 to maximize number of output elements.  On the other
+hand, consider these masks with filter size 5, padding=SAME:
+
+[T, _, _, _, T, _, _, _, T, _, _, _, T, _, _] # phase 0, output size 4
+[_, T, _, _, _, T, _, _, _, T, _, _, _, T, _] # phase 1, output size 4
+[_, _, T, _, _, _, T, _, _, _, T, _, _, _, T] # phase 2, output size 4
+[_, _, _, T, _, _, _, T, _, _, _, T, _, _, _] # phase 3, output size 3
+
+
+TensorFlow has a choice of phases 0, 1, or 2, which all produce the maximum
+possible output size 4.  It chooses phase 1 because this avoids the
+convolutions at the very ends which use 2 padding elements. 
+
+PyTorch treats padding differently.  Instead of 'VALID' and 'SAME', it requires
+an integer padding argument to be applied to both left and right.  In
+particular, for filter of size 4, TensorFlow will apply 1 padding element on
+the left, and 2 on the right of the input.  This allows the filter to cover all
+ten positions with its 2nd element.  In the case of PyTorch, choosing padding=1
+produces output size 9.  Choosing padding=2 yields an output size 11.
+
+In my experiments, I 
+
+[The Filter Reference Element]
+
+Note that there is an implicit choice of what filter element to place at each
+position in the input.  In this case, I chose the center (green) element.
+
+In a filter of an even number of elements, one could choose either of the two
+most central elements to place on the diagonal of the matrix.  For instance,
+here is a matrix built from a size 4 filter:
+
+[mat10_filt4.png]
+[matrix from size 4 filter, element 1 used as the reference element]
 
 
 

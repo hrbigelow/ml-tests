@@ -1,33 +1,33 @@
 A Matrix Multiplication view of Convolutions
 
-Convolutions and Deconvolutions are somewhat confusing to me, and I've found
-this visualization useful for sorting out all of the variations.  I hope you
-find it useful as well!
+    Convolutions and Deconvolutions are somewhat confusing to me, and I've found
+    this visualization useful for sorting out all of the variations.  I hope you
+    find it useful as well!
 
-Suppose you have a 1D convolution filter:
+    Suppose you have a 1D convolution filter:
 
-[filter.png]
-[1D convolution filter]
+    [filter.png]
+    [1D convolution filter]
 
-Each color represents a distinct value.  The value could be a scalar or a
-matrix.  For the purposes of this article, we just consider it to be an
-abstract "element" that can be multiplied with an input element.
+    Each color represents a distinct value.  The value could be a scalar or a
+    matrix.  For the purposes of this article, we just consider it to be an
+    abstract "element" that can be multiplied with an input element.
 
-Using the same color-coded values (with gray representing zero), here is
-picture of matrix multiply style of convolution using this filter.
+    Using the same color-coded values (with gray representing zero), here is
+    picture of matrix multiply style of convolution using this filter.
 
-[mat_s1_ph0_inv0_lp0_rp0_d0.png]
-[Stride 1, No padding, Green reference element]
-[F.conv1d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1)]
+    [mat_s1_ph0_inv0_lp0_rp0_d0.png]
+    [Stride 1, No padding, Green reference element]
+    [F.conv1d(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1)]
 
-Because it is square, the matrix multiplication produces an output the same
-size as the input.  Due to the lack of padding, the first two and last two
-positions are "invalid".  The output shows zero-valued placeholders in these
-positions.  But the one-to-one correspondence between input and output is
-clear.  This is helpful to distinguish between edge effects, stride, and
-inverse stride, as we will see below. 
+    Because it is square, the matrix multiplication produces an output the same
+    size as the input.  Due to the lack of padding, the first two and last two
+    positions are "invalid".  The output shows zero-valued placeholders in these
+    positions.  But the one-to-one correspondence between input and output is
+    clear.  This is helpful to distinguish between edge effects, stride, and
+    inverse stride, as we will see below. 
 
-Notice that the green filter element appears on the matrix diagonal.  I call it
+    Notice that the green filter element appears on the matrix diagonal.  I call it
 the filter's "reference element".  With a choice of reference element, the
 "filter position" now means "the input element covered by the reference
 element".  Thus, the output of a convolution is now in one-to-one

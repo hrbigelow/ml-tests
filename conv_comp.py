@@ -34,14 +34,13 @@ if __name__ == '__main__':
     for fil_str in args.filters:
         filt = [int(i) for i in fil_str.split(',')]
         filt_sz = len(filt)
-        for inv in (False, True):
-            for st in range(1, args.matrix_size - 1):
-                max_dil = (args.matrix_size - filt_sz) // (filt_sz - 1)
-                for dil in range(1, max_dil + 1):
-                    for pad in ('VALID', 'SAME'):
-                        for api in ('Torch', 'TensorFlow'):
+        max_dil = (args.matrix_size - filt_sz) // (filt_sz - 1)
+        for dil in range(1, max_dil + 1):
+            for api in ('Torch', 'TensorFlow'):
+                for pad in ('VALID', 'SAME'):
+                    for st in range(1, args.matrix_size - 1):
+                        for inv in (False, True):
                             combos.append((filt, inv, st, dil, pad, api))
-    print('Finished building combinations')
 
     for filt, inv, st, dil, pad, api in combos:
         if inv:
@@ -59,22 +58,43 @@ if __name__ == '__main__':
         input_sz = ct.input_size()
         input = np.random.randint(1, args.max_input_val, input_sz)
 
-        if ct.bad_input():
-            continue
-
-        processed_input, mc_raw, mc, mask = ct.conv(input)
+        matched_phase = -1
+        found_mc = []
+        found_mask = []
 
         if api == 'Torch':
             conv, cmd = torch_conv.conv(input, filt, inv, st, pad, dil)
         else:
             conv, cmd = tf_conv.conv(input, args.matrix_size, filt, inv, st, pad, dil)
-        same = np.all(conv == mc)
-        if not same:
-            print('input: ', input)
-            print('mask : ', mask)
-            print('{}: {}'.format(api, conv))
-            print('matml_mc: ', mc)
+
+        for ph in range(ct.stride):
+            ct.phase = ph
+            processed_input, mc_raw, mc, mask = ct.conv(input)
+
+            same = np.all(conv == mc)
+            if not same:
+                found_mc.append(mc)
+                found_mask.append(mask)
+                continue
+            else:
+                matched_phase = ph
+                break
+            #if not same:
+            #    print('a, b: ', ct.ref_bounds_allowed())
+            #    print('x, y: ', ct.ref_bounds_avoid_pad())
+            #    print('input: ', input)
+            #    print('mask : ', mask)
+            #    print('{}: {}'.format(api, conv))
+            #    print('matml_mc: ', mc)
+
+        if matched_phase == -1:
+            print('\n')
+            print('Conv: ', conv)
+            print('Found mcs:')
+            print('\n'.join(map(str, found_mc)))
+            print('Found masks: ')
+            print('\n'.join(map(str, found_mask)))
 
         print('\t'.join(map(str, [ct.filter(False).astype(int), inv, input_sz,
-            len(conv), st, dil, pad, same, cmd])))
+            len(conv), st, dil, pad, matched_phase, api, cmd])))
 

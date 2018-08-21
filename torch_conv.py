@@ -6,7 +6,7 @@ import convtype as ctyp
 
 def get_ct(matrix_sz, filt, stride, padding_type, dilation):
     '''Produce a ConvType object that corresponds with these setting'''
-    filt_ctr = len(filt) // 2
+    filt_ctr = (len(filt) - 1) // 2
     phase = 'LEFTMAX'
     return ctyp.ConvType(matrix_sz, filt, filt_ctr, stride,
             False, phase, dilation, padding_type)
@@ -14,7 +14,7 @@ def get_ct(matrix_sz, filt, stride, padding_type, dilation):
 
 def get_ct_transpose(matrix_sz, filt, stride, padding_type, dilation):
     '''Produce a ConvType object that corresponds with these settings'''
-    filt_ctr = len(filt) // 2
+    filt_ctr = (len(filt)) // 2
     phase = 'LEFTMAX'
     return ctyp.ConvType(matrix_sz, filt, filt_ctr,
             stride, True, phase, dilation, padding_type)
@@ -31,11 +31,15 @@ def conv(input, filt, is_inverse, stride, padding_type, dilation):
     tinput = torch.tensor(nest2(input), dtype=torch.float64)
     tweight = torch.tensor(nest2(filt), dtype=torch.float64)
 
-    filt_sz = len(filt) * dilation - dilation
+    filt_sz = len(filt) + (len(filt) - 1) * (dilation - 1)
     if padding_type == 'SAME':
-        padding = int(filt_sz / 2)
+        # if filt_sz % 2 == 0, we instead want uneven padding
+        padding = filt_sz // 2
+        if filt_sz % 2 == 0:
+            trim_left = 1
     elif padding_type == 'VALID':
         padding = 0
+        trim_left = 0
 
     if is_inverse:
         conv = F.conv_transpose1d(
@@ -51,6 +55,7 @@ def conv(input, filt, is_inverse, stride, padding_type, dilation):
                 tinput, tweight, bias=None, stride=stride,
                 padding=padding, dilation=dilation,
                 groups=1)
+        conv = conv[:,:,trim_left:]
         cmd = 'F.conv1d(input, weight, bias=None, stride={}, padding={}, ' \
         'dilation={}, groups=1)'.format(stride, padding, dilation)
 

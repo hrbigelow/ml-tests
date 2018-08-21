@@ -7,14 +7,14 @@ from sys import stderr
 
 def get_ct(matrix_sz, filt, stride, padding_type, dilation):
     '''Produce a ConvType object that corresponds with these settings'''
-    filt_ctr = len(filt) // 2
+    filt_ctr = (len(filt) - 1) // 2
     phase = 'LEFTMAX'
     return ctyp.ConvType(matrix_sz, filt, filt_ctr, stride, False,
             phase, dilation, padding_type)
 
 def get_ct_transpose(matrix_sz, filt, stride, padding_type, dilation):
     '''Produce a ConvType object that corresponds with these settings'''
-    filt_ctr = len(filt) // 2
+    filt_ctr = (len(filt) - 1) // 2
     phase = 'LEFTMAX'
     return ctyp.ConvType(matrix_sz, filt, filt_ctr,
             stride, True, phase, dilation, padding_type)

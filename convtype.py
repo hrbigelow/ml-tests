@@ -46,11 +46,7 @@ def dilate_array(x, dilation, fill_value=0):
 def unmask(x, mask, false_val):
     '''if x = a[mask], produce a, where a[np.logical_not(mask)] = 0'''
     it = iter(x)
-    a = np.full([len(mask)], false_val)
-    for i,m in enumerate(mask):
-        if m: a[i] = next(it)
-    return a
-
+    return np.array([next(it) if m else false_val for m in mask])
     
 
 class ConvType(object):
@@ -98,10 +94,29 @@ class ConvType(object):
     def set_phase(self, phase):
         '''sets the phase according to various strategies
         LEFTMAX: phase that retains first valid left-most position
-        LEFTMOST_AVOID_PADDING'''
+        '''
+
         if isinstance(phase, str):
             if phase == 'LEFTMAX':
-                self.phase, _ = self.ref_valid_bounds() 
+                a, b = self.ref_bounds_allowed()
+                x, y = self.ref_bounds_avoid_pad()
+                a, b = a % self.stride, b % self.stride
+                x, y = x % self.stride, y % self.stride
+                if b == 0: b = self.stride
+                if y == 0: y = self.stride
+
+                if a < b:
+                    if x in range(a, b): p = x
+                    else: p = a
+                else:
+                    if x in range(b, a): p = a
+                    elif a <= x: p = x
+                    elif x < b: 
+                        if y <= a: p = x
+                        else: p = a
+
+                self.phase = p 
+
         elif isinstance(phase, int):
             self.phase = phase
 
@@ -149,18 +164,23 @@ class ConvType(object):
             return len(mask)
             
 
-    def ref_valid_bounds(self):
+    def ref_bounds_avoid_pad(self):
         '''provide [beg, end) range where the filter reference element can
-        be and is a valid range'''
-        return (self.ref_index() - self._lpad, 
-                self.matrix_sz - (self.ref_index_rev() - self._rpad))
+        be, not considering padding'''
+        return (self.ref_index(), self.matrix_sz - self.ref_index_rev())
 
+
+    def ref_bounds_allowed(self):
+        '''provide [beg, end) range where the filter reference element can
+        be, considering padding'''
+        beg, end = self.ref_bounds_avoid_pad()
+        return max(beg - self._lpad, 0), min(self.matrix_sz, end + self._rpad)
 
     def mask(self):
         '''generate a mask of valid output positions based on phase, stride,
         left padding, right padding, filter size, and filter reference position'''
         mask = np.full([self.matrix_sz], VALID_VAL)
-        beg, end = self.ref_valid_bounds()
+        beg, end = self.ref_bounds_allowed()
         
         for i in range(self.matrix_sz):
             if i % self.stride != self.phase:
@@ -199,7 +219,6 @@ class ConvType(object):
         mask = self.mask()
         mat = self.conv_mat()
         bool_mask = (mask == 0)
-        print(bool_mask)
 
         if self.is_inverse:
             processed = unmask(input, bool_mask, 0)

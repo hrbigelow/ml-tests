@@ -43,10 +43,15 @@ def dilate_array(x, dilation, fill_value=0):
         
     return d
 
-def unmask(x, mask, false_val):
+def unmask(x, mask):
     '''if x = a[mask], produce a, where a[np.logical_not(mask)] = 0'''
     it = iter(x)
-    return np.array([next(it) if m else false_val for m in mask])
+    try:
+        u = np.array([next(it) if m else 0 for m in mask])
+        return u
+    except StopIteration:
+        print(x, mask)
+        exit(1)
     
 
 class ConvType(object):
@@ -55,17 +60,17 @@ class ConvType(object):
 
         self.matrix_sz = matrix_sz
         self.filt = np.array(filt, dtype=np.float)
-        self.filt_ctr = filt_ctr 
         self.stride = stride
         self.is_inverse = is_inverse
         self.dilation = dilation
+        self.set_filter_center(filt_ctr) 
         self.set_padding(padding)
-        self.set_phase(phase)
+        self.phase = phase
 
 
     def filter(self, do_dilate):
         if do_dilate:
-            return dilate_array(self.filt, self.dilation, 0)
+            return dilate_array(self.filt, self.dilation)
         else:
             return self.filt
 
@@ -73,10 +78,18 @@ class ConvType(object):
         return len(self.filter(True))
 
     def ref_index(self):
-        return dilate_index(self.filt_ctr, self.dilation)
+        return self.filt_ctr 
 
     def ref_index_rev(self):
         return self.filter_size() - 1 - self.ref_index()
+
+    def set_filter_center(self, ftype):
+        if isinstance(ftype, str):
+            if ftype == 'LC':
+                f_sz = self.filter_size()
+                self.filt_ctr = (f_sz - 1) // 2
+        else:
+            self.filt_ctr = ftype
 
 
     def set_padding(self, padding):
@@ -91,41 +104,7 @@ class ConvType(object):
             else:
                 raise ValueError
 
-    def set_phase(self, phase):
-        '''sets the phase according to various strategies
-        LEFTMAX: phase that retains first valid left-most position
-        '''
 
-        if isinstance(phase, str):
-            if phase == 'LEFTMAX':
-                a, b = self.ref_bounds_allowed()
-                x, y = self.ref_bounds_avoid_pad()
-                a, b = a % self.stride, b % self.stride
-                x, y = x % self.stride, y % self.stride
-                if b == 0: b = self.stride
-                if y == 0: y = self.stride
-
-                if a < b:
-                    if x in range(a, b): p = x
-                    else: p = a
-                else:
-                    if x in range(b, a): p = a
-                    elif a <= x: p = x
-                    elif x < b: 
-                        if y <= a: p = x
-                        else: p = a
-
-                self.phase = p 
-
-        elif isinstance(phase, int):
-            self.phase = phase
-
-    def usable_padding(self):
-        '''check whether the dilated convolution filter could use up all
-        left and right padding when traversing the input positions with
-        the ref element'''
-        return self.ref_index() >= self._lpad and self.ref_index_rev() >= self._rpad
-    
     def bad_input(self):
         return (self.stride < 1
         or self.phase >= self.stride 
@@ -135,31 +114,12 @@ class ConvType(object):
         or self._lpad < 0
         or self._rpad < 0)
         
-    def padding_type(self):
-        '''return VALID, SAME, or CUSTOM based on the filter size
-        and paddings requested'''
-        if self._lpad == self._rpad == 0: return 'VALID'
-        elif (self._lpad == self.ref_index() 
-                and self._rpad == self.ref_index_rev()):
-                    return 'SAME'
-        else: return 'CUSTOM'
-
-    def lpad(self):
-        '''truncates any left padding that is unnecessary to produce a valid
-        convolution at the first input position 
-        '''
-        return min(self._lpad, self.ref_index())
-
-    def rpad(self):
-        return min(self._rpad,
-                dilate_index(len(self.filt) - 1, self.dilation) - \
-                        self.ref_index())
 
     def input_size(self):
         '''give the size of input that this ConvType will accept'''
         mask = self.mask()
         if self.is_inverse:
-            return len(list(filter(None, mask == 0)))
+            return len(mask[mask == 0])
         else:
             return len(mask)
             
@@ -183,10 +143,12 @@ class ConvType(object):
         beg, end = self.ref_bounds_allowed()
         
         for i in range(self.matrix_sz):
-            if i % self.stride != self.phase:
-                mask[i] = SKIP_VAL
             if i not in range(beg, end):
                 mask[i] = INVALID_VAL
+            elif i % self.stride != self.phase:
+                mask[i] = SKIP_VAL
+            else:
+                mask[i] = VALID_VAL
         return mask
 
 
@@ -221,7 +183,7 @@ class ConvType(object):
         bool_mask = (mask == 0)
 
         if self.is_inverse:
-            processed = unmask(input, bool_mask, 0)
+            processed = unmask(input, bool_mask)
             conv_raw = np.matmul(mat, processed)
             conv = conv_raw
 

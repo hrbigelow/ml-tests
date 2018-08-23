@@ -3,25 +3,12 @@
 # In these tests, a convolution is implemented as a single, square matrix
 # multiplication of the input.  the main concepts of stride, filter width,
 # dilation, fractional stride, left and right padding are all implemented
-# simply by designing the matrix, in particular, choosing which elements are
-# zeros.  This approach is inspired by Naoki Shibuya's Medium article,
+# by choosing 
+# zeros.
+
+# This approach is inspired by Naoki Shibuya's Medium article,
 # https://towardsdatascience.com/up-sampling-with-transposed-convolution-9ae4f2df52d0
 
-# Because the matrix is square, the output is the same size as the input, even
-# for cases of non-integer stride or fractional stride (up-sampling).  The
-# one-to-one correspondence between input and output elements makes explicit
-# the distinction between striding and padding effects.  It is defined as
-# follows:
-
-# A single filter element is chosen as the 'reference' element using
-# filt_ref_index.  The output of a convolution is then assigned to the input
-# element that is covered by this reference element.
-
-# To recover the final convolution, a mask is provided for the output elements,
-# with values VALID_VAL, SKIP_VAL, and INVALID_VAL.  SKIP_VAL indicates that
-# the position was skipped due to stride.  INVALID_VAL indicates the position
-# wasn't a valid convolution due to the filter being off the end of the padded
-# input.
 
 import numpy as np
 
@@ -40,8 +27,8 @@ def dilate_array(x, dilation, fill_value=0):
     for i,v in enumerate(x):
         dp = dilate_index(i, dilation)
         d[dp] = v 
-        
     return d
+
 
 def unmask(x, mask):
     '''if x = a[mask], produce a, where a[np.logical_not(mask)] = 0'''
@@ -87,7 +74,10 @@ class ConvType(object):
         if isinstance(ftype, str):
             if ftype == 'LC':
                 f_sz = self.filter_size()
-                self.filt_ctr = (f_sz - 1) // 2
+                if self.is_inverse:
+                    self.filt_ctr = f_sz // 2
+                else:
+                    self.filt_ctr = (f_sz - 1) // 2
         else:
             self.filt_ctr = ftype
 
@@ -156,19 +146,16 @@ class ConvType(object):
         ''' outputs: mat (input_sz x input_sz)
             use as: conv_raw = np.matmul(mat, input) 
         '''
-        fc = self.ref_index()
-        filt = self.filter(do_dilate=True)
-        sz = self.matrix_sz
+        c = self.ref_index()
+        filt = self.filter(do_dilate=True).tolist()
 
-        mat = np.zeros([sz, sz])
+        # construct the repeating pattern of elements, then reshape
+        fl, fc, fr = filt[0:c], filt[c:c+1], filt[c+1:]
+        m_sz = self.matrix_sz
+        z = [0] * (m_sz - len(filt) + 1)
+        values = (fc + fr + z + fl) * (m_sz - 1) + fc
 
-        for r in range(sz):
-            for f in range(len(filt)):
-                c = r - fc + f
-                if c < 0 or c >= sz:
-                    continue
-                mat[r, c] = filt[f]
-
+        mat = np.array(values).reshape(m_sz, m_sz)
         if self.is_inverse:
             mat = np.transpose(mat, (1, 0))
 

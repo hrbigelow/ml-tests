@@ -23,27 +23,19 @@ def conv(input, matrix_sz, filt, inv, st, pad, dil):
     strides = [st]
     dilation = [dil]
 
-    if pad not in ('VALID', 'SAME'):
-        return (np.array([]), 'Not executed.  Padding must be VALID or SAME')
-
-    if not inv and dil > 1 and st > 1:
-        return (np.array([]), 'Not executed. stride > 1 and dilation > 1')
-
     with tf.device('/cpu:0'):
         try:
             if inv:
                 output_shape = tf.constant([1, matrix_sz, 1])
                 conv_ten = conv1d_transpose(input_ten, filt_ten, output_shape, st, pad)
-                cmd = 'tf.contrib.nn.conv1d_transpose(value=input, filter=filter, ' \
-                        'output_shape={}, stride={}, padding={})'.format(
+                cmd = 'tf.contrib.nn.conv1d_transpose(input, filter, {}, {}, {})'.format(
                                 str(output_shape.numpy()), st, pad)
             else:
                 conv_ten = convolution(input_ten, filt_ten, pad, strides, dilation) 
-                cmd = 'tf.nn.convolution(input=input, filter=filter, ' \
-                        'padding={}, strides={}, dilation_rate={})'.format(
+                cmd = 'tf.nn.convolution(input, filter, {}, {}, {})'.format(
                         pad, str(strides), str(dilation))
-        except:
-            return np.array([]), 'Not executed'
+        except (TypeError, tf.errors.InvalidArgumentError, ValueError) as te:
+            return np.array([]), 'Exception: ' + str(te) 
 
 
         # only squeeze B and C, leaving W intact.

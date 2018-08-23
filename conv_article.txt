@@ -1,13 +1,9 @@
 A Matrix Multiplication view of Convolutions
 
-Convolutions and, in particular transposed convolutions are confusing to me,
-and I've found this visualization useful for sorting out all of the variations.
-I hope you find it useful as well.
-
-In this short note, I show that 1D convolutions and transpose convolutions
-calculated by PyTorch and TensorFlow can be replicated by simply multiplying
-the input by a sparse square matrix.  Optionally, the input or output is
-processed by a mask. 
+In this note, I show that 1D convolutions and transpose convolutions calculated
+by PyTorch and TensorFlow can be replicated by simply multiplying the input by
+a sparse square matrix.  Optionally, the input or output is processed by a
+mask. 
 
 [The Matrix]
 
@@ -22,36 +18,45 @@ the matrix would be:
 [mat_s1_ph0_inv0_lp0_rp0_d0.png]
 [square matrix with filter weights scanned across each row]
 
+This matrix is constructed from a filter, and designating which filter element
+to place on the diagonal of the matrix:
+
+filter = [1,2,3,2,1]
+c = 2 # index of the center filter element
+
+fl, fc, fr = filter[0:c], filter[c:c+1], filter[c+1:] # [1,2], [3], [2,1]
+z = [0] * (matrix_sz - len(filter) + 1)
+cells = (fc + fr + z + fl) * (matrix_sz - 1) + fc
+mat = np.array(cells).reshape(matrix_sz, matrix_sz)
+
+
 Multiplying this matrix by a vector of input elements is equivalent to
-positioning the center of the filter on each input element and performing
-the convolution, collecting the output.
+positioning the center of the filter on each input element and performing the
+convolution, collecting the output.  After all, a convolution is just a dot
+product, and a matrix multiplication is a dot product of each row with the
+input.
+
+Choice of stride and padding strategy determine which of these convolutions
+will be retained.  Filtering output elements with a mask can do this:
 
 conv_pre = np.matmul(matrix, input)
-conv_mm = do_mask(conv_pre, mask)
-conv_tf = ...
-conv_pt = ...
+conv = do_mask(conv_pre, mask) # defined below
 
+The transpose convolution first 'up-samples' the input with the mask and then
+does matrix multiplication.
 
-The transpose convolution does the same thing, except multiplies the input by
-the transpose of the matrix.
+input_processed = un_mask(input, mask) # defined below
+conv = np.matmul(matrix_transpose, input_processed)
+
+Because of these masking operations, a convolution produces output that is the
+same size or smaller than the input.  It is also known as 'down-sampling'.
+Transpose convolutions produce output that is the same size or larger than the
+input, also called 'up-sampling'.
+
 
 [Upsampling, downsampling and the mask]
 
-The above example of convolution or transpose corresponds to stride=1,
-padding=SAME.  For other variations, a mask is used.  For convolutions, a mask
-filters out some of the output elements due to stride > 1 or filter positions
-that are invalid.
-
-For 1D transpose convolutions, the process is somewhat inverse: the input is
-augmented with zeros (explained below), and then multiplied by the transpose of
-the matrix.  For instance:
-
-input_aug = un_mask(input, mask)
-tconv_mm = np.matmul(matrix.transpose(), input_aug)
-tconv_tf = ...
-tconv_pt = ...
-
-with:
+The operations above are defined here:
 
 def do_mask(ary, mask):
     '''remove elements where False in mask'''
@@ -68,24 +73,38 @@ u = un_mask(a, m)  # [1, 0, 0, 2, 3]
 b = do_mask(u, m)  # [1, 2, 3]
 assert all(b == a)
 
+For a convolution, the amount of down-sampling equals the number of False
+values in the mask.  For a transpose convolution, the amount of up-sampling
+also equals the number of False values.
+
+[Complete example]
+
+Using the same mask for a convolution and then a transpose convolution will
+recover the original input size.  It won't recover the same input *values*,
+because there is loss of information during down-sampling.  But, the two
+operations are meant to be inverses of each other with respect to size changes.
+Here is a complete example of a convolution followed by a transpose
+convolution:
+
+
 
 [One-to-one correspondence between input and output]
 
-One nice feature of this conception of convolution or transposed convolution is
-that it defines a correspondence between input and output elements.  Both the
-choice of stride and padding affect the number of output elements produced.
-But, this correspondence makes clear which elements are omitted (or up-sampled)
-due to stride or edge effects. 
+One nice feature of this view of convolution or transposed convolution is that
+it defines a correspondence between input and output elements.  Both the choice
+of stride and padding affect the number of output elements produced.  But, this
+correspondence makes clear which elements are omitted (or up-sampled) due to
+stride or edge effects. 
 
-For instance, here are two convolutions (T = True, _ = False):
+For instance, here are masks corresponding to two convolutions (T = True, _ =
+False):
 
-[_, _, T, _, T, _, T, _, T, _, _, _] # stride 2, padding = VALID
+[_, _, T, _, T, _, T, _, T, _, _, _] # stride 2, padding VALID
 
-[_, T, _, _, T, _, _, T, _, _, T, _] # stride 3, padding = SAME
+[_, T, _, _, T, _, _, T, _, _, T, _] # stride 3, padding SAME
 
 Both of these cases give four output elements.  But we can see at a glance the
 difference in where the information derives. 
-
 
 Choice of stride and padding affect the mask but not the matrix.  Also, a
 convolution and transposed convolution using the same stride and padding
@@ -103,15 +122,13 @@ The matrix would be:
 [dilated_matrix.png]
 [matrix with a filter size 5, dilation=2]
 
-Everything else about the calculation would be the same, however.  How to
-construct the mask from stride and padding settings, and how to apply it in the
-case of convolution or transposed convolution.
+Everything else about the calculation would be the same, however.
 
 [Particulars of TensorFlow and PyTorch convolutions]
 
-Note that the rules for constructing the mask are still underdetermined.  For
-instance, here are all possible masks for stride=3, padding=SAME, filter length
-5, and input length 13:
+Stride and padding don't fully determine a mask.  For instance, here are all
+possible masks for stride=3, padding=SAME, filter length 5, and input length
+13:
 
 [T, _, _, T, _, _, T, _, _, T, _, _, T] # phase 0, output size 5
 [_, T, _, _, T, _, _, T, _, _, T, _, _] # phase 1, output size 4
@@ -137,19 +154,6 @@ the left, and 2 on the right of the input.  This allows the filter to cover all
 ten positions with its 2nd element.  In the case of PyTorch, choosing padding=1
 produces output size 9.  Choosing padding=2 yields an output size 11.
 
-In my experiments, I 
-
-[The Filter Reference Element]
-
-Note that there is an implicit choice of what filter element to place at each
-position in the input.  In this case, I chose the center (green) element.
-
-In a filter of an even number of elements, one could choose either of the two
-most central elements to place on the diagonal of the matrix.  For instance,
-here is a matrix built from a size 4 filter:
-
-[mat10_filt4.png]
-[matrix from size 4 filter, element 1 used as the reference element]
 
 
 

@@ -36,16 +36,17 @@ if __name__ == '__main__':
         filt = [int(i) for i in fil_str.split(',')]
         filt_sz = len(filt)
         max_dil = (args.matrix_size - filt_sz) // (filt_sz - 1)
-        # for inv in (False, True):
-        for inv in (True,):
-            # for dil in range(1, max_dil + 1):
-            for dil in range(1, 2):
-                for api in ('Torch',):
-                #for api in ('Torch', 'TensorFlow'):
-                    # for pad in ('VALID', 'SAME'):
-                    for pad in ('SAME',):
-                        # for st in range(1, args.matrix_size - 1):
-                        for st in range(3, 7):
+        # for inv in (True,):
+        # for inv in (False,):
+        for dil in range(1, max_dil + 1):
+        # for dil in range(1, 2):
+            # for api in ('Torch',):
+            for api in ('Torch', 'TensorFlow'):
+                for pad in ('VALID', 'SAME'):
+                # for pad in ('VALID',):
+                    for st in range(1, args.matrix_size - 1):
+                    # for st in range(4, 6):
+                        for inv in (False, True):
                             combos.append((filt, inv, st, dil, pad, api))
 
     for filt, inv, st, dil, pad, api in combos:
@@ -68,6 +69,9 @@ if __name__ == '__main__':
 
             input = rands[0:input_sz] 
             processed_input, mc_raw, mc, mask = ct.conv(input)
+
+            if 0 not in mask:
+                continue
 
             if api == 'Torch':
                 conv, cmd = torch_conv.conv(input, mask, filt, inv, st, ph, pad, dil)
@@ -95,7 +99,8 @@ if __name__ == '__main__':
             break
 
         # if True:
-        if matched_phase == -1:
+        if False:
+        # if matched_phase == -1:
             print('\n')
             print('Inputs: ')
             print('\n'.join(map(str, inputs)))

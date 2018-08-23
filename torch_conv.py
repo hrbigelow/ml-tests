@@ -1,40 +1,40 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
-import convtype as ctyp
 
-def compute_out_padding(mask):
+def compute_padding(mask):
     '''For input_sz=3, filter_sz=7, padding=VALID,
     ConvType Mask: [-2, -2, -2, -1, 0, -1, 0, -1, 0, -1, -2, -2, -2]
     Torch Mask:    [-2, -2, -2, 0, -1, 0, -1, 0, -2, -2, -2]
     The between-stride positions that are adjacent to the INVALID (-2)
     positions are deleted in the Torch Mask.  So, we want to add these
     in, in the form of output_padding.
+    Returns: num_left_twos, num_left_ones, num_right_ones, num_right_twos
     '''
     assert 0 in mask
 
-    zeros, = np.where(mask == 0)
-    lz, rz = int(zeros[0]), int(zeros[-1])
+    lt, lo = 0, 0
+    for m in mask:
+        if m == -2: lt += 1
+        elif m == -1: lo += 1
+        else: break
 
-    negones, = np.where(mask == -1)
-    try:
-        ln, rn = int(negones[0]), int(negones[-1])
-    except IndexError:
-        ln, rn = 100000, -100000
+    rt, ro = 0, 0
+    for m in reversed(mask):
+        if m == -2: rt += 1
+        elif m == -1: ro += 1
+        else: break
 
-    extra_left = max(lz - ln, 0)
-    extra_right = max(rn - rz, 0)
+    # print('mask: ', mask)
+    # print('computed adjustments: ', lt, lo, ro, rt)
 
-    out_padding = max(extra_left, extra_right)
-    trim_left = out_padding - extra_left 
-    trim_right = out_padding - extra_right
+    return lt, lo, ro, rt 
 
-    # print('computed adjustments: ', out_padding, trim_left, trim_right)
-    return out_padding, trim_left, trim_right 
 
 def wrap_np(x):
     return torch.tensor(np.expand_dims(np.expand_dims(x, 0), 0),
             dtype=torch.float64)
+
 
 def conv(input, mask, filt, inv, st, phase, padding_type, dil):
     '''use torch's F.conv1d and F.conv_transpose1d to produce the convolution
@@ -45,52 +45,53 @@ def conv(input, mask, filt, inv, st, phase, padding_type, dil):
     tweight = wrap_np(filt)
 
     filt_sz = len(filt) + (len(filt) - 1) * (dil - 1)
-
-    if padding_type == 'SAME':
-        padding = (filt_sz) // 2
-        if filt_sz % 2 == 0:
-            trim_left = 1 # tweak to produce unequal left/right padding
-        else:
-            trim_left = 0
-    elif padding_type == 'VALID':
-        padding = 0
-        trim_left = 0
+    lw, rw = ((filt_sz - 1) // 2), (filt_sz // 2)
+    l2, l1, r1, r2 = compute_padding(mask)
 
     if inv:
         # padding = kernel_size - 1 - padding_arg 
         # padding_arg = kernel_size - 1 - padding
-        padding_arg = filt_sz - 1 - padding
-        # padding_arg = padding
-        # padding_arg = 0
-        out_padding, trim_left, trim_right = compute_out_padding(mask)
+        # where padding is applied to both left and right
+        # we want to apply individual padding to the left and right.
+        # the strategy will be to apply the larger of the two wanted paddings
+        # and then trim the excess
 
-        cmd = 'F.conv_transpose1d(' \
-                'input={}, weight={}, bias=None, stride={}, ' \
-                'padding={}, output_padding={}, groups=1, ' \
-                'dilation={})'.format(
-                        tinput.numpy().astype('i'),
-                        'weight',
-                        # tweight.numpy().astype('i'),
-                        st, padding_arg, out_padding, dil)
+        lneed = lw + l2 + l1
+        rneed = rw + r2 + r1
+        pad = max(lneed, rneed)
+        ltrim = max(rneed - lneed, 0)
+        rtrim = max(lneed - rneed, 0)
+        pad_arg = filt_sz - 1 - pad
+
+        cmd = 'F.conv_transpose1d({}, {}, None, {}, {}, {}, 1, {})'.format(
+                tinput.numpy().astype('i'),
+                'weight',
+                # tweight.numpy().astype('i'),
+                st, pad_arg, 0, dil)
         try:
             conv = F.conv_transpose1d(
                     input=tinput, weight=tweight, bias=None, stride=st,
-                    padding=padding_arg, output_padding=out_padding, groups=1,
+                    padding=pad_arg, output_padding=0, groups=1,
                     dilation=dil)
-        except TypeError as te:
+        except (TypeError, RuntimeError) as ex:
             conv = torch.tensor([[[]]], dtype=torch.float64)
-            cmd = 'Not executed. Attempted: ' + cmd + ' with exception: ' + str(te)
+            cmd = str(ex) + ': ' + cmd
 
-        # conv = conv[:,:,trim_left:-trim_right]
+        rind = -rtrim or None
+        conv = conv[:,:,ltrim:rind]
 
     else:
-        cmd = 'F.conv1d(input, weight, bias=None, stride={}, padding={}, ' \
-        'dilation={}, groups=1)'.format(st, padding, dil)
-        conv = F.conv1d(
-                tinput, tweight, bias=None, stride=st,
-                padding=padding, dilation=dil,
-                groups=1)
-        conv = conv[:,:,trim_left:]
+        lneed = lw - l2
+        rneed = rw - r2
+        pad = max(lneed, rneed)
+        ltrim = max(rneed - lneed, 0)
+        rtrim = max(lneed - rneed, 0)
+
+        cmd = 'F.conv1d(input, weight, None, {}, {}, {}, 1)'.format(st, pad, dil)
+        conv = F.conv1d(tinput, tweight, None, st, pad, dil, 1)
+
+        rind = -rtrim or None
+        conv = conv[:,:,ltrim:rind]
 
     def unnest2(x):
         return np.squeeze(np.squeeze(x, 0), 0)

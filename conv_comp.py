@@ -86,7 +86,7 @@ if __name__ == '__main__':
 
             if inv:
                 bool_mask = mask == 0
-                aug_input = ctp.unmask(input, bool_mask)
+                aug_input = ctp.un_mask(input, bool_mask)
                 found_aug_input.append(aug_input)
 
             if cmd.startswith('Not executed'):

@@ -37,7 +37,8 @@ product, and a matrix multiplication is a dot product of each row with the
 input.
 
 Choice of stride and padding strategy determine which of these convolutions
-will be retained.  Filtering output elements with a mask can do this:
+will be discarded, or 'down-sampled'.  Filtering output elements with a mask
+does this:
 
 conv_pre = np.matmul(matrix, input)
 conv = do_mask(conv_pre, mask) # defined below
@@ -96,8 +97,7 @@ of stride and padding affect the number of output elements produced.  But, this
 correspondence makes clear which elements are omitted (or up-sampled) due to
 stride or edge effects. 
 
-For instance, here are masks corresponding to two convolutions (T = True, _ =
-False):
+For instance, here are masks for two convolutions (T = True, _ = False):
 
 [_, _, T, _, T, _, T, _, T, _, _, _] # stride 2, padding VALID
 

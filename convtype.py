@@ -30,16 +30,73 @@ def dilate_array(x, dilation, fill_value=0):
     return d
 
 
-def unmask(x, mask):
+def un_mask(x, mask):
     '''if x = a[mask], produce a, where a[np.logical_not(mask)] = 0'''
     it = iter(x)
     try:
         u = np.array([next(it) if m else 0 for m in mask])
         return u
     except StopIteration:
-        print(x, mask)
-        exit(1)
+        print('Error: not enough input values: ', x, mask)
+        raise
     
+def do_mask(x, mask):
+    return x[mask == 0] 
+
+
+def make_mat(matrix_sz, filt, center_index):
+    ''' outputs: mat (input_sz x input_sz)
+        use as: conv_raw = np.matmul(mat, input) 
+    '''
+    c = center_index
+    filt = filt.tolist()
+    filt_sz = len(filt)
+    left_zeros = matrix_sz - c - 1
+    right_zeros = matrix_sz - filt_sz + c
+    values = [0] * left_zeros + filt + [0] * right_zeros 
+
+    mat = []
+    for i in reversed(range(matrix_sz)):
+        mat += values[i:i + matrix_sz]
+
+    return np.array(mat).reshape(matrix_sz, matrix_sz)
+
+
+def get_padding(padding, filter_sz, center_index):
+    if isinstance(padding, tuple):
+        return padding
+    elif isinstance(padding, str):
+        if padding == 'VALID':
+            return 0, 0
+        elif padding == 'SAME':
+            return center_index, filter_sz - center_index - 1
+        else:
+            raise ValueError
+    elif isinstance(padding, int):
+        return padding, padding
+
+
+def conv_mask(input_sz, filter_sz, stride, padding_code):
+    '''produce the implicitly used mask corresponding to these settings for
+    F.conv1d call'''
+    lw, rw = ((filter_sz - 1) // 2), (filter_sz // 2)
+    lpad, rpad = get_padding(padding_code, filter_sz, lw)
+
+    left_invalid = max(lw - lpad, 0)
+    right_invalid = max(rw - rpad, 0)
+    mid_sz = input_sz - left_invalid - right_invalid
+    snip = (mid_sz - 1) % stride
+    mid_sz -= snip
+
+    mask = [-2] * left_invalid
+    mid_sz
+    for i in range(mid_sz):
+        if i % stride == 0: mask += [0]
+        else: mask += [-1]
+    mask += [-2] * right_invalid
+
+    return np.array(mask)
+
 
 class ConvType(object):
 
@@ -83,16 +140,8 @@ class ConvType(object):
 
 
     def set_padding(self, padding):
-        if isinstance(padding, tuple):
-            self._lpad, self._rpad = padding
-        elif isinstance(padding, str):
-            if padding == 'VALID':
-                self._lpad = self._rpad = 0
-            elif padding == 'SAME':
-                self._lpad = self.ref_index()
-                self._rpad = self.ref_index_rev()
-            else:
-                raise ValueError
+        self._lpad, self._rpad = \
+                get_padding(padding, self.filter_size(), self.ref_index())
 
 
     def bad_input(self):
@@ -147,15 +196,8 @@ class ConvType(object):
             use as: conv_raw = np.matmul(mat, input) 
         '''
         c = self.ref_index()
-        filt = self.filter(do_dilate=True).tolist()
-
-        # construct the repeating pattern of elements, then reshape
-        fl, fc, fr = filt[0:c], filt[c:c+1], filt[c+1:]
-        m_sz = self.matrix_sz
-        z = [0] * (m_sz - len(filt) + 1)
-        values = (fc + fr + z + fl) * (m_sz - 1) + fc
-
-        mat = np.array(values).reshape(m_sz, m_sz)
+        filt = self.filter(do_dilate=True)
+        mat = make_mat(self.matrix_sz, filt, self.ref_index())
         if self.is_inverse:
             mat = np.transpose(mat, (1, 0))
 
@@ -170,14 +212,14 @@ class ConvType(object):
         bool_mask = (mask == 0)
 
         if self.is_inverse:
-            processed = unmask(input, bool_mask)
+            processed = un_mask(input, bool_mask)
             conv_raw = np.matmul(mat, processed)
             conv = conv_raw
 
         else:
             processed = input 
             conv_raw = np.matmul(mat, processed)
-            conv = conv_raw[bool_mask] 
+            conv = do_mask(conv_raw, bool_mask)
 
         return processed, conv_raw, conv, mask 
 

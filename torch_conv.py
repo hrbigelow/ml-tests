@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
+import convtype as ctyp
 
 def compute_padding(mask):
     '''For input_sz=3, filter_sz=7, padding=VALID,
@@ -31,9 +32,44 @@ def compute_padding(mask):
     return lt, lo, ro, rt 
 
 
-def wrap_np(x):
-    return torch.tensor(np.expand_dims(np.expand_dims(x, 0), 0),
-            dtype=torch.float64)
+def do_wrap(x):
+    return torch.tensor(
+            np.expand_dims(np.expand_dims(x, 0), 0),
+            dtype=torch.float64
+            )
+
+def un_wrap(x):
+    return np.squeeze(np.squeeze(x.numpy(), 0), 0)
+
+
+def test(wanted_input_sz, filter_sz, stride, padding, dilation):
+    filter = np.random.randint(1, 20, filter_sz)
+    dilated_filter = ctyp.dilate_array(filter, dilation)
+    dilated_filter_sz = len(dilated_filter)
+    mask = ctyp.conv_mask(wanted_input_sz, dilated_filter_sz, stride, padding)
+    input_sz = mask.shape[0]
+    input = np.random.randint(1, 20, input_sz)
+
+    center_index = (dilated_filter_sz - 1) // 2
+
+    mat = ctyp.make_mat(input_sz, dilated_filter, center_index)
+    mm_conv = ctyp.do_mask(np.matmul(mat, input), mask)
+    th_conv = un_wrap(F.conv1d(do_wrap(input), do_wrap(filter),
+        None, stride, padding, dilation, 1))
+
+    mm_convt = np.matmul(np.transpose(mat, (1, 0)), ctyp.un_mask(mm_conv, mask == 0))
+
+    output_padding = 0
+    groups = 1
+    th_convt = un_wrap(F.conv_transpose1d(do_wrap(th_conv), do_wrap(filter), None,
+        stride, padding, output_padding, groups, dilation))
+
+    passed = th_conv.shape == mm_conv.shape \
+            and all(th_conv == mm_conv) \
+            and th_convt.shape == mm_convt.shape \
+            and all(th_convt == mm_convt)
+    return passed, (mm_conv, th_conv, mm_convt, th_convt)
+
 
 
 def conv(input, mask, filt, inv, st, phase, padding_type, dil):
@@ -41,8 +77,8 @@ def conv(input, mask, filt, inv, st, phase, padding_type, dil):
     (or fractionally strided convolution), with all parameters determined from
     conv_type, on the input'''
 
-    tinput = wrap_np(input)
-    tweight = wrap_np(filt)
+    tinput = do_wrap(input)
+    tweight = do_wrap(filt)
 
     filt_sz = len(filt) + (len(filt) - 1) * (dil - 1)
     lw, rw = ((filt_sz - 1) // 2), (filt_sz // 2)
@@ -93,9 +129,6 @@ def conv(input, mask, filt, inv, st, phase, padding_type, dil):
         rind = -rtrim or None
         conv = conv[:,:,ltrim:rind]
 
-    def unnest2(x):
-        return np.squeeze(np.squeeze(x, 0), 0)
-
-    nconv = unnest2(conv.numpy())
+    nconv = un_wrap(conv)
     return nconv, cmd
     

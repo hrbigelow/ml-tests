@@ -168,12 +168,6 @@ def tf_do_conv(input, filter, stride, padding, dilation):
 def array_equal(a, b):
     return a.shape == b.shape and all(a == b)
 
-    passed = tf_conv.shape == mm_conv.shape \
-            and all(tf_conv == mm_conv) \
-            and tf_convt.shape == mm_convt.shape \
-            and all(tf_convt == mm_convt)
-    return passed, (mm_conv.astype('f'), tf_conv, mm_convt.astype('f'), tf_convt)
-
 def mask_repr(mask):
     return ''.join(list(map(lambda x: 'T' if x else '_', mask)))
 

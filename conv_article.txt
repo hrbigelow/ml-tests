@@ -13,47 +13,35 @@ on each row, centered around the diagonal.  For a filter like this:
 [filter.png]
 [1D convolution filter]
 
-the matrix would be:
+This matrix is constructed from a filter, and choice of filter 'center'
+element.
 
-[mat_s1_ph0_inv0_lp0_rp0_d0.png]
+matrix = make_matrix(matrix_sz=10, filter=[1,2,3,2,1], filter_center=2)
+
+the resulting matrix is:
+
+[mat.png]
 [square matrix with filter weights scanned across each row]
-
-This matrix is constructed from a filter, and designating which filter element
-to place on the diagonal of the matrix:
-
-filter = [1,2,3,2,1]
-c = 2 # index of the center filter element
-
-fl, fc, fr = filter[0:c], filter[c:c+1], filter[c+1:] # [1,2], [3], [2,1]
-z = [0] * (matrix_sz - len(filter) + 1)
-cells = (fc + fr + z + fl) * (matrix_sz - 1) + fc
-mat = np.array(cells).reshape(matrix_sz, matrix_sz)
 
 
 Multiplying this matrix by a vector of input elements is equivalent to
 positioning the center of the filter on each input element and performing the
-convolution, collecting the output.  After all, a convolution is just a dot
-product, and a matrix multiplication is a dot product of each row with the
+convolution, collecting the output.  After all, a single convolution is just a
+dot product, and a matrix multiplication is a dot product of each row with the
 input.
 
 Choice of stride and padding strategy determine which of these convolutions
 will be discarded, or 'down-sampled'.  Filtering output elements with a mask
 does this:
 
-conv_pre = np.matmul(matrix, input)
-conv = do_mask(conv_pre, mask) # defined below
+conv_full = np.matmul(matrix, input)
+conv_downsampled = do_mask(conv_full, mask) 
 
-The transpose convolution first 'up-samples' the input with the mask and then
-does matrix multiplication.
+In contrast to a regular convolution, transpose convolution first 'up-samples'
+the input with the mask and then does matrix multiplication:
 
-input_processed = un_mask(input, mask) # defined below
-conv = np.matmul(matrix_transpose, input_processed)
-
-Because of these masking operations, a convolution produces output that is the
-same size or smaller than the input.  It is also known as 'down-sampling'.
-Transpose convolutions produce output that is the same size or larger than the
-input, also called 'up-sampling'.
-
+input_upsampled = un_mask(input, mask)
+conv = np.matmul(np.transpose(matrix, (1, 0)), input_upsampled)
 
 [Upsampling, downsampling and the mask]
 
@@ -61,33 +49,56 @@ The operations above are defined here:
 
 def do_mask(ary, mask):
     '''remove elements where False in mask'''
-    return ary[np.where(mask)]
+    return ary[mask]
+
 
 def un_mask(ary, mask):
     '''insert zeros where False in mask'''
     it = iter(ary)
     return np.array([next(it) if m else 0 for m in mask])
 
-a = np.array([1,2,3])
-m = np.array([True, False, False, True, True])
-u = un_mask(a, m)  # [1, 0, 0, 2, 3]
-b = do_mask(u, m)  # [1, 2, 3]
-assert all(b == a)
+[mask_unmask.jpg]
 
-For a convolution, the amount of down-sampling equals the number of False
-values in the mask.  For a transpose convolution, the amount of up-sampling
-also equals the number of False values.
+When chained together, shape is restored, although some values are replaced
+with zeros.  In this diagram, hollow circles represent zeros, hollow squares
+represent False values in the mask.
+
+[Mask construction from Stride, Filter length and Padding]
+
+The mask is constructed in three regions.  On the left is a region of False
+elements of length left_filter - left_padding.   On the right is a similar
+False region of length right_filter - right_padding.  Both of these regions
+represent places where the filter overhangs the padded input. In the middle is
+a set of single True values intercalated by stretches of False values of length
+stride - 1.
+
+[mask_regions.jpg]
+
+The quantities left_filter and right_filter are defined in the following way.
+By convention, we take the center of a filter to be the central element for
+odd-length filters, and the right-of-center element for even-length filters.
+The center element is what's placed on the diagonal of the matrix.
+
+[filter_flanks.jpg]
 
 [Complete example]
 
-Using the same mask for a convolution and then a transpose convolution will
-recover the original input size.  It won't recover the same input *values*,
-because there is loss of information during down-sampling.  But, the two
-operations are meant to be inverses of each other with respect to size changes.
-Here is a complete example of a convolution followed by a transpose
-convolution:
+So, overall, we have taken a filter, padding strategy, and stride to construct
+a matrix and a mask.  We can now use the same matrix and mask to perform both a
+convolution and a transpose convolution with this approach as follows:
 
+mask = make_mask(input_sz, filter_sz, stride, padding)
+matrix = make_matrix(len(mask), filter) 
+mm_conv = do_mask(np.matmul(matrix, input), mask)
+mm_convt = np.matmul(np.transpose(matrix, (1, 0)), un_mask(mm_conv, mask))
+assert len(input) == len(mm_convt)
 
+As an aside, astute readers will notice that I've used input_sz to make the
+mask, but len(mask) to construct the matrix.  It turns out that the mask is
+sometimes slightly shorter than input_sz.  This is because I've designed these
+functions to create a mask that can replicate the results of PyTorch and
+TensorFlow for the settings of stride and padding.  
+ 
 
 [One-to-one correspondence between input and output]
 

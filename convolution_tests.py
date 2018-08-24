@@ -36,24 +36,6 @@ def do_mask(x, mask):
     return x[mask] 
 
 
-def make_mat(matrix_sz, filt, center_index):
-    ''' outputs: mat (input_sz x input_sz)
-        use as: conv_raw = np.matmul(mat, input) 
-    '''
-    c = center_index
-    filt = filt.tolist()
-    filt_sz = len(filt)
-    left_zeros = matrix_sz - c - 1
-    right_zeros = matrix_sz - filt_sz + c
-    values = [0] * left_zeros + filt + [0] * right_zeros 
-
-    mat = []
-    for i in reversed(range(matrix_sz)):
-        mat += values[i:i + matrix_sz]
-
-    return np.array(mat).reshape(matrix_sz, matrix_sz)
-
-
 def get_padding(pad, filter_sz, center_index):
     '''Converts a padding strategy into actual padding values'''
     if isinstance(pad, tuple):
@@ -68,11 +50,32 @@ def get_padding(pad, filter_sz, center_index):
     elif isinstance(pad, int):
         return pad, pad
 
+def center_index(filter_sz):
+    return (filter_sz - 1) // 2
 
-def make_mask(input_sz, filter_sz, center_index, stride, padding_code):
+
+def make_matrix(matrix_sz, filter):
+    ''' outputs: mat (input_sz x input_sz)
+        use as: conv_raw = np.matmul(mat, input) 
+    '''
+    filter = filter.tolist()
+    filter_sz = len(filter)
+    c = center_index(filter_sz)
+    left_zeros = matrix_sz - c - 1
+    right_zeros = matrix_sz - filter_sz + c
+    values = [0] * left_zeros + filter + [0] * right_zeros 
+
+    cells = []
+    for i in reversed(range(matrix_sz)):
+        cells += values[i:i + matrix_sz]
+
+    return np.array(cells).reshape(matrix_sz, matrix_sz)
+
+
+def make_mask(input_sz, filter_sz, stride, padding_code):
     '''produce the implicitly used mask corresponding to these settings for
     torch or tensorflow calls'''
-    lw = center_index
+    lw = center_index(filter_sz)
     rw = filter_sz - lw - 1
     lpad, rpad = get_padding(padding_code, filter_sz, lw)
 
@@ -87,9 +90,9 @@ def make_mask(input_sz, filter_sz, center_index, stride, padding_code):
     for i in range(mid_sz):
         if i % stride == 0: mask += [True]
         else: mask += [False]
-    mask += [False] * right_invalid
+    mask += [False] * (right_invalid + snip)
 
-    return np.array(mask)
+    return np.array(mask), snip
 
 
 
@@ -97,13 +100,12 @@ def prepare_inputs(wanted_input_sz, filter_sz, stride, padding, dilation, max_va
     filter = np.random.randint(1, max_val, filter_sz)
     dilated_filter = dilate_array(filter, dilation)
     dilated_filter_sz = len(dilated_filter)
-    center_index = (dilated_filter_sz - 1) // 2
-    mask = make_mask(wanted_input_sz, dilated_filter_sz, center_index, stride, padding)
-    matrix_sz = mask.shape[0]
-    matrix = make_mat(matrix_sz, dilated_filter, center_index)
+    mask, stride_extra = make_mask(wanted_input_sz, dilated_filter_sz, stride, padding)
+    matrix_sz = len(mask)
+    matrix = make_matrix(matrix_sz, dilated_filter)
 
     input = np.random.randint(1, max_val, matrix_sz)
-    return input, filter, dilated_filter, matrix, mask
+    return input, filter, dilated_filter, matrix, mask, stride_extra
 
 
 def matmul_conv(input, matrix, mask):
@@ -120,12 +122,11 @@ def torch_do_wrap(x):
 def torch_un_wrap(x):
     return np.squeeze(np.squeeze(x.numpy(), 0), 0)
 
-def torch_do_conv(input, filter, stride, padding, dilation):
+def torch_do_conv(input, filter, stride, padding, output_padding, dilation):
     th_conv = torch_un_wrap(torch.nn.functional.conv1d(torch_do_wrap(input),
         torch_do_wrap(filter),
         None, stride, padding, dilation, 1))
 
-    output_padding = 0
     groups = 1
     th_convt = torch_un_wrap(torch.nn.functional.conv_transpose1d(torch_do_wrap(th_conv),
         torch_do_wrap(filter), None,
@@ -206,10 +207,10 @@ if __name__ == '__main__':
             for pad in range((f_sz - 1) // 2 + 1):
                 for dil in range(1, args.dilation_max + 1):
                 # for dil in range(1, 1):
-                    input, filter, dilated_filter, matrix, mask = \
+                    input, filter, dilated_filter, matrix, mask, out_pad = \
                             prepare_inputs(args.input_size, f_sz, st, pad, dil, max_val)
                     mm_conv, mm_convt = matmul_conv(input, matrix, mask)
-                    torch_conv, torch_convt = torch_do_conv(input, filter, st, pad, dil)
+                    torch_conv, torch_convt = torch_do_conv(input, filter, st, pad, out_pad, dil)
                     eq = array_equal(mm_conv, torch_conv)
                     teq = array_equal(mm_convt, torch_convt)
                     conv_sz = len(mm_conv)
@@ -224,7 +225,7 @@ if __name__ == '__main__':
                 # TensorFlow doesn't support dilations > 1 if stride > 1
                 max_dil = 1 if st > 1 else args.dilation_max
                 for dil in range(1, max_dil + 1):
-                    input, filter, dilated_filter, matrix, mask = \
+                    input, filter, dilated_filter, matrix, mask, out_pad = \
                             prepare_inputs(args.input_size, f_sz, st, pad, dil, max_val)
                     mm_conv, mm_convt = matmul_conv(input, matrix, mask)
                     tf_conv, tf_convt = tf_do_conv(input, filter, st, pad, dil)

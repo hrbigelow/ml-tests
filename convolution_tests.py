@@ -204,6 +204,9 @@ if __name__ == '__main__':
     max_val = args.max_val 
     np.set_printoptions(linewidth=158)
 
+    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format('API', 'FILT_SZ',
+        'STRIDE', 'PAD', 'DIL', 'CONV_SZ', 'TCONV_SZ', 'CONV_EQ', 'TCONV_EQ', 'MASK', 'FILT'))
+
     for f_sz in range(1, args.filter_size_max + 1):
         for st in range(1, args.stride_max + 1):
             for pad in range((f_sz - 1) // 2 + 1):
@@ -215,8 +218,11 @@ if __name__ == '__main__':
                     torch_conv, torch_convt = torch_do_conv(input, filter, st, pad, dil)
                     eq = array_equal(mm_conv, torch_conv)
                     teq = array_equal(mm_convt, torch_convt)
-                    print('Torch\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(f_sz,
-                        st, pad, dil, eq, teq, mask_repr(mask), filter_repr(dilated_filter)))
+                    conv_sz = len(mm_conv)
+                    convt_sz = len(mm_convt)
+                    print('Torch\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(f_sz,
+                        st, pad, dil, conv_sz, convt_sz, eq, teq, 
+                        mask_repr(mask), filter_repr(dilated_filter)))
 
     for f_sz in range(1, args.filter_size_max + 1):
         for st in range(1, args.stride_max + 1):
@@ -230,7 +236,10 @@ if __name__ == '__main__':
                     tf_conv, tf_convt = tf_do_conv(input, filter, st, pad, dil)
                     eq = array_equal(mm_conv, tf_conv)
                     teq = array_equal(mm_convt, tf_convt)
-                    print('TensorFlow\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(f_sz,
-                        st, pad, dil, eq, teq, mask_repr(mask), filter_repr(dilated_filter)))
+                    conv_sz = len(mm_conv)
+                    convt_sz = len(mm_convt)
+                    print('TensorFlow\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(f_sz,
+                        st, pad, dil, conv_sz, convt_sz, eq, teq, 
+                        mask_repr(mask), filter_repr(dilated_filter)))
 
 

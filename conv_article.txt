@@ -81,26 +81,79 @@ The center element is what's placed on the diagonal of the matrix.
 
 [filter_flanks.jpg]
 
-[Complete example]
+[Dilation only affects the matrix]
 
-So, overall, we have taken a filter, padding strategy, and stride to construct
-a matrix and a mask.  We can now use the same matrix and mask to perform both a
-convolution and a transpose convolution with this approach as follows:
+The default choice of dilation = 1 means the filter is left untouched.
+Dilation > 1 means the filter is augmented with (dilation - 1) zero elements
+between each input element.  This affects only the matrix.  The mask is
+affected only in the sense that the dilated filter is larger, so more padding
+must be applied to make the edge positions considered valid.
 
-mask = make_mask(input_sz, filter_sz, stride, padding)
-matrix = make_matrix(len(mask), filter) 
+[dilation2_matrix.jpg]
+[Example of a matrix of dilation 2]
+
+Other than this, the matrix/mask approach is identical for convolutions and
+transpose convolutions.
+
+
+[(Almost) Complete example]
+
+So, we can take input, filter, padding strategy, and stride to construct a
+matrix and a mask.  Then, use the matrix and mask to perform both a convolution
+and a transpose convolution.  Finally, show that this matrix/mask approach produces
+identical results as PyTorch and TensorFlow:
+
+mask = make_mask(len(input), len(filter), stride, padding)
+matrix = make_matrix(len(input), filter) 
 mm_conv = do_mask(np.matmul(matrix, input), mask)
 mm_convt = np.matmul(np.transpose(matrix, (1, 0)), un_mask(mm_conv, mask))
 assert len(input) == len(mm_convt)
 
-As an aside, astute readers will notice that I've used input_sz to make the
-mask, but len(mask) to construct the matrix.  It turns out that the mask is
-sometimes slightly shorter than input_sz.  This is because I've designed these
-functions to create a mask that can replicate the results of PyTorch and
-TensorFlow for the settings of stride and padding.  
- 
+# Compare matrix/mask results with PyTorch
+th_conv = un_wrap(F.conv1d(do_wrap(input), wrap(filter), None, stride, padding, dilation, 1))
+th_convt = un_wrap(F.conv_transpose1d(wrap(th_conv), wrap(filter), None,
+    stride, padding, output_padding, groups=1, dilation))
 
-[One-to-one correspondence between input and output]
+assert all(mm_conv == th_conv)
+assert all(mm_convt == th_convt)
+
+# Compare matrix/mask results with TensorFlow 
+tf_conv = un_wrap(tf.nn.convolution(wrap(input), wrap(filter), padding, [stride], [dilation]))
+output_shape = tf.constant([1, len(input), 1]) 
+dilated_filter = dilate_array(filter, dilation)
+tf_convt = un_wrap(tf.contrib.nn.conv1d_transpose(wrap(tf_conv), wrap(dilated_filter),
+    output_shape, stride, padding))
+
+assert all(mm_conv == tf_conv)
+assert all(mm_convt == tf_convt)
+
+This experiment works for a large range of input sizes, filter sizes, stride,
+padding, and dilation.  A small wrinkle is that TensorFlow's conv1d_transpose
+doesn't support dilations > 1 if stride > 1.  But, we can simulate that by
+pre-constructing a dilated filter.  Another wrinkle is that TensorFlow supports
+padding types 'VALID' and 'SAME', while PyTorch accepts a single integer
+padding.  For even-length filters, this means that it is impossible to produce
+a logically 'SAME' padding for every possible input element.
+
+[Generalizing to higher spatial dimensions]
+
+I've illustrated that PyTorch and TensorFlow's convolutions and transpose
+convolutions in one spatial dimension are mathematically equivalent to the
+matrix/mask approach.  It turns out that this is true in two or more spatial
+dimensions by first "unwrapping" both the filter and input into one dimension.
+
+[Input and Output channels]
+
+In this discussion I said that a single convolution is a dot product between
+filter elements and input elements.  But, a dot product is just the sum of
+pairwise multiplied elements.  One pair could be a scalar filter element and
+scalar input element.  Or, it could be a matrix filter element and vector input
+element.  Then the multiplication is just matrix-vector multiplication, and the
+final addition is just vector-vector addition.  Either way, nothing about the
+higher level organization of this is changed.
+
+
+[Some perspective]
 
 One nice feature of this view of convolution or transposed convolution is that
 it defines a correspondence between input and output elements.  Both the choice
@@ -116,55 +169,4 @@ For instance, here are masks for two convolutions (T = True, _ = False):
 
 Both of these cases give four output elements.  But we can see at a glance the
 difference in where the information derives. 
-
-Choice of stride and padding affect the mask but not the matrix.  Also, a
-convolution and transposed convolution using the same stride and padding
-settings also use the same mask. 
-
-On the other hand, dilation of the filter has no effect on the mask.  But it
-affects the matrix, since the matrix is entirely determined by the filter.
-To illustrate, suppose you have this filter:
-
-[dilated_filter.png]
-[filter of size 5 with dilation=2]
-
-The matrix would be:
-
-[dilated_matrix.png]
-[matrix with a filter size 5, dilation=2]
-
-Everything else about the calculation would be the same, however.
-
-[Particulars of TensorFlow and PyTorch convolutions]
-
-Stride and padding don't fully determine a mask.  For instance, here are all
-possible masks for stride=3, padding=SAME, filter length 5, and input length
-13:
-
-[T, _, _, T, _, _, T, _, _, T, _, _, T] # phase 0, output size 5
-[_, T, _, _, T, _, _, T, _, _, T, _, _] # phase 1, output size 4
-[_, _, T, _, _, T, _, _, T, _, _, T, _] # phase 2, output size 4
-
-TensorFlow chooses phase 0 to maximize number of output elements.  On the other
-hand, consider these masks with filter size 5, padding=SAME:
-
-[T, _, _, _, T, _, _, _, T, _, _, _, T, _, _] # phase 0, output size 4
-[_, T, _, _, _, T, _, _, _, T, _, _, _, T, _] # phase 1, output size 4
-[_, _, T, _, _, _, T, _, _, _, T, _, _, _, T] # phase 2, output size 4
-[_, _, _, T, _, _, _, T, _, _, _, T, _, _, _] # phase 3, output size 3
-
-
-TensorFlow has a choice of phases 0, 1, or 2, which all produce the maximum
-possible output size 4.  It chooses phase 1 because this avoids the
-convolutions at the very ends which use 2 padding elements. 
-
-PyTorch treats padding differently.  Instead of 'VALID' and 'SAME', it requires
-an integer padding argument to be applied to both left and right.  In
-particular, for filter of size 4, TensorFlow will apply 1 padding element on
-the left, and 2 on the right of the input.  This allows the filter to cover all
-ten positions with its 2nd element.  In the case of PyTorch, choosing padding=1
-produces output size 9.  Choosing padding=2 yields an output size 11.
-
-
-
 

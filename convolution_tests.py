@@ -1,117 +1,23 @@
 import numpy as np
 import torch
 import tensorflow as tf
+import mmconv as mmc
 
 tf.enable_eager_execution()
 
-def dilate_array(x, dilation):
-    '''e.g.
-    x = [1,2,3], dilation = 2
-    returns: [1, 0, 0, 2, 0, 0, 3]
-    '''
-    dm = dilation - 1
-    d = np.zeros([len(x) + (len(x) - 1) * dm])
-    i = 0
-    for v in x:
-        d[i] = v
-        i += dilation 
-    return d
 
-
-def un_mask(x, mask):
-    '''Inserts zero-padding where mask is False.  For example:
-    x = [1,2,3], mask = [True, False, False, True, False, True, False]
-    returns: [1, 0, 0, 2, 0, 3, 0]
-    '''
-    it = iter(x)
-    try:
-        u = np.array([next(it) if m else 0 for m in mask])
-        return u
-    except StopIteration:
-        print('Error: not enough input values: ', x, mask)
-        raise
-    
-def do_mask(x, mask):
-    '''Remove elements of x where mask is False'''  
-    return x[mask] 
-
-
-def get_padding(pad, filter_sz, center_index):
-    '''Converts a padding strategy into actual padding values'''
-    if isinstance(pad, tuple):
-        return pad
-    elif isinstance(pad, str):
-        if pad == 'VALID':
-            return 0, 0
-        elif pad == 'SAME':
-            return center_index, filter_sz - center_index - 1
-        else:
-            raise ValueError
-    elif isinstance(pad, int):
-        return pad, pad
-
-def center_index(filter_sz):
-    return (filter_sz - 1) // 2
-
-
-def make_matrix(matrix_sz, filter):
-    ''' outputs: mat (input_sz x input_sz)
-        use as: conv_raw = np.matmul(mat, input) 
-    '''
-    filter = filter.tolist()
-    filter_sz = len(filter)
-    c = center_index(filter_sz)
-    left_zeros = matrix_sz - c - 1
-    right_zeros = matrix_sz - filter_sz + c
-    values = [0] * left_zeros + filter + [0] * right_zeros 
-
-    cells = []
-    for i in reversed(range(matrix_sz)):
-        cells += values[i:i + matrix_sz]
-
-    return np.array(cells).reshape(matrix_sz, matrix_sz)
-
-
-def make_mask(input_sz, filter_sz, stride, padding_code):
-    '''produce the implicitly used mask corresponding to these settings for
-    torch or tensorflow calls'''
-    lw = center_index(filter_sz)
-    rw = filter_sz - lw - 1
-    lpad, rpad = get_padding(padding_code, filter_sz, lw)
-
-    left_invalid = max(lw - lpad, 0)
-    right_invalid = max(rw - rpad, 0)
-    mid_sz = input_sz - left_invalid - right_invalid
-    snip = (mid_sz - 1) % stride
-    mid_sz -= snip
-
-    mask = [False] * left_invalid
-    mid_sz
-    for i in range(mid_sz):
-        if i % stride == 0: mask += [True]
-        else: mask += [False]
-    mask += [False] * (right_invalid + snip)
-
-    return np.array(mask), snip
-
-
-
-def prepare_inputs(wanted_input_sz, filter_sz, stride, padding, dilation, max_val):
+def prepare_inputs(matrix_sz, filter_sz, stride, padding, dilation, max_val):
     filter = np.random.randint(1, max_val, filter_sz)
-    dilated_filter = dilate_array(filter, dilation)
+    dilated_filter = mmc.dilate_array(filter, dilation)
     dilated_filter_sz = len(dilated_filter)
-    mask, stride_extra = make_mask(wanted_input_sz, dilated_filter_sz, stride, padding)
-    matrix_sz = len(mask)
-    matrix = make_matrix(matrix_sz, dilated_filter)
+    mask, partial_stride = mmc.make_mask(matrix_sz, dilated_filter_sz, stride, padding)
+
+    assert len(mask) == matrix_sz
+    matrix = mmc.make_matrix(matrix_sz, dilated_filter)
 
     input = np.random.randint(1, max_val, matrix_sz)
-    return input, filter, dilated_filter, matrix, mask, stride_extra
+    return input, filter, dilated_filter, matrix, mask, partial_stride
 
-
-def matmul_conv(input, matrix, mask):
-    mm_conv = do_mask(np.matmul(matrix, input), mask)
-    mm_convt = np.matmul(np.transpose(matrix, (1, 0)), un_mask(mm_conv, mask))
-    return mm_conv, mm_convt
 
 
 # Torch
@@ -157,7 +63,7 @@ def tf_do_conv(input, filter, stride, padding, dilation):
         tf_conv = np.array([])
 
     output_shape = tf.constant([1, len(input), 1]) 
-    dilated_filter = dilate_array(filter, dilation)
+    dilated_filter = mmc.dilate_array(filter, dilation)
     try:
         tf_convt = tf_un_wrap(tf.contrib.nn.conv1d_transpose(tf_wrap_input(tf_conv),
             tf_wrap_filt(dilated_filter), output_shape, stride, padding))
@@ -169,11 +75,6 @@ def tf_do_conv(input, filter, stride, padding, dilation):
 def array_equal(a, b):
     return a.shape == b.shape and all(a == b)
 
-def mask_repr(mask):
-    return ''.join(list(map(lambda x: 'T' if x else '_', mask)))
-
-def filter_repr(filt):
-    return ''.join(list(map(lambda x: '*' if x else '-', filt)))
 
 
 def get_args():
@@ -209,7 +110,7 @@ if __name__ == '__main__':
                 # for dil in range(1, 1):
                     input, filter, dilated_filter, matrix, mask, out_pad = \
                             prepare_inputs(args.input_size, f_sz, st, pad, dil, max_val)
-                    mm_conv, mm_convt = matmul_conv(input, matrix, mask)
+                    mm_conv, mm_convt = mmc.conv(input, matrix, mask)
                     torch_conv, torch_convt = torch_do_conv(input, filter, st, pad, out_pad, dil)
                     eq = array_equal(mm_conv, torch_conv)
                     teq = array_equal(mm_convt, torch_convt)
@@ -217,7 +118,7 @@ if __name__ == '__main__':
                     convt_sz = len(mm_convt)
                     print('Torch\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(f_sz,
                         st, pad, dil, conv_sz, convt_sz, eq, teq, 
-                        mask_repr(mask), filter_repr(dilated_filter)))
+                        mmc.mask_repr(mask), mmc.filter_repr(dilated_filter)))
 
     for f_sz in range(1, args.filter_size_max + 1):
         for st in range(1, args.stride_max + 1):
@@ -227,7 +128,7 @@ if __name__ == '__main__':
                 for dil in range(1, max_dil + 1):
                     input, filter, dilated_filter, matrix, mask, out_pad = \
                             prepare_inputs(args.input_size, f_sz, st, pad, dil, max_val)
-                    mm_conv, mm_convt = matmul_conv(input, matrix, mask)
+                    mm_conv, mm_convt = mmc.conv(input, matrix, mask)
                     tf_conv, tf_convt = tf_do_conv(input, filter, st, pad, dil)
                     eq = array_equal(mm_conv, tf_conv)
                     teq = array_equal(mm_convt, tf_convt)
@@ -235,6 +136,6 @@ if __name__ == '__main__':
                     convt_sz = len(mm_convt)
                     print('TensorFlow\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(f_sz,
                         st, pad, dil, conv_sz, convt_sz, eq, teq, 
-                        mask_repr(mask), filter_repr(dilated_filter)))
+                        mmc.mask_repr(mask), mmc.filter_repr(dilated_filter)))
 
 

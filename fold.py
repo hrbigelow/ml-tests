@@ -31,7 +31,7 @@ class Fold(object):
     def _i(self, d):
         '''input width in the d-th dimension (from 0)'''
         if d == 0:
-            return self._id[0]
+            return self._id[d]
         else:
             sep = self._f(d - 1) - 1
             return joinv(self._i(d - 1), self._id[d], sep)
@@ -40,7 +40,7 @@ class Fold(object):
     def _f(self, d):
         '''filter width in the d-th dimension (from 0)'''
         if d == 0:
-            return self._fd[0]
+            return self._fd[d]
         else:
             sep = self._i(d - 1) - 1
             return joinv(self._f(d - 1), self._fd[d], sep)
@@ -48,9 +48,10 @@ class Fold(object):
     def _k(self, d):
         '''position of the key element in the d-th dimension (from 0)'''
         if d == 0:
-            return self._f(0) // 2
+            return self._f(d) // 2
         else:
-            return (self._fd[d] // 2) * (self._f(d - 1) + self._i(d - 1) - 1)
+            sep = self._i(d - 1) - 1
+            return (self._f(d - 1) + sep) * (self._fd[d] // 2) + self._k(d - 1)
 
 
     def _ism(self, d):

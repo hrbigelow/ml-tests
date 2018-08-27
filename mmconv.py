@@ -98,6 +98,9 @@ def mask_repr(mask):
 def filter_repr(filt):
     return ''.join(list(map(lambda x: '*' if x else '-', filt)))
 
+def array_equal(a, b):
+    return a.shape == b.shape and (a == b).all()
+
 def conv(input, matrix, mask):
     mm_conv = do_mask(np.matmul(matrix, input), mask)
     mm_convt = np.matmul(np.transpose(matrix, (1, 0)), un_mask(mm_conv, mask))

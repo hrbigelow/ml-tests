@@ -28,9 +28,9 @@ class Fold(object):
     '''implement folding and unfolding between one and multiple
     dimensions'''
 
-    def __init__(self, filter_sz, input_sz, stride, padding, dilation):
-        self.ndim = len(filter_sz)
-        assert len(input_sz) == self.ndim
+    def __init__(self, input_sz, filter_sz, stride, padding, dilation):
+        self.ndim = len(input_sz)
+        assert len(filter_sz) == self.ndim
         assert len(stride) == self.ndim
         assert len(padding) == self.ndim
         assert len(dilation) == self.ndim
@@ -47,8 +47,6 @@ class Fold(object):
         for d in reversed(range(1, self.ndim)):
             m = pad(m, d, self._fd[d] - 1, False)
         end_idx = [s - 1 for s in self._id]
-        print(m.shape)
-        print(self._id)
         end = linidx(list(m.shape), end_idx)
         return m.reshape(-1)[:end + 1]
 
@@ -58,7 +56,7 @@ class Fold(object):
         for d in reversed(range(1, self.ndim)):
             m = pad(m, d, self._id[d] - 1, 0)
         end_idx = [s - 1 for s in filter.shape]
-        key_idx = [s // 2 for s in self._fd]
+        key_idx = [(s - 1) // 2 for s in self._fd]
         end = linidx(list(m.shape), end_idx) 
         key = linidx(list(m.shape), key_idx)
         return m.reshape(-1)[:end + 1], key
@@ -66,10 +64,14 @@ class Fold(object):
 
     def make_mask(self):
         v = np.array([True])
+        partial_stride = []
+        masked_sz = []
         for d in range(self.ndim):
-            m, _ = mmc.make_mask(self._id[d], self._fd[d], self.stride[d], self.pad[d])
+            m, p = mmc.make_mask(self._id[d], self._fd[d], self.stride[d], self.pad[d])
             v = np.concatenate(list(map(lambda b: v & b, m)))
-        return v
+            partial_stride.append(p)
+            masked_sz.append(len(np.where(m)[0]))
+        return v, partial_stride, masked_sz
 
 
     def make_matrix(self, filter):

@@ -28,35 +28,43 @@ class Fold(object):
     '''implement folding and unfolding between one and multiple
     dimensions'''
 
-    def __init__(self, input_sz, filter_sz, stride, padding, dilation):
+    def __init__(self, input_sz, filter, stride, padding, api_mode):
         self.ndim = len(input_sz)
-        assert len(filter_sz) == self.ndim
+        assert len(filter.shape) == self.ndim
         assert len(stride) == self.ndim
         assert len(padding) == self.ndim
-        assert len(dilation) == self.ndim
 
-        self._fd = filter_sz
-        self._id = input_sz
+        self.filter = filter
+        self.filter_sz = list(filter.shape)
+        self.input_sz = input_sz
         self.stride = stride
         self.pad = padding
-        self.dilation = dilation
+        self.mask = []
+        self.partial_stride = []
+        self.api_mode = api_mode
+
+        for d in range(self.ndim):
+            m, p = mmc.make_mask(self.input_sz[d], self.filter_sz[d],
+                    self.stride[d], self.pad[d], self.api_mode)
+            self.mask.append(m)
+            self.partial_stride.append(p)
 
 
-    def _input_spacer_mask(self):
-        m = np.full(self._id, True)
+    def input_spacer_mask(self):
+        m = np.full(self.input_sz, True)
         for d in reversed(range(1, self.ndim)):
-            m = pad(m, d, self._fd[d] - 1, False)
-        end_idx = [s - 1 for s in self._id]
+            m = pad(m, d, self.filter_sz[d] - 1, False)
+        end_idx = [s - 1 for s in self.input_sz]
         end = linidx(list(m.shape), end_idx)
         return m.reshape(-1)[:end + 1]
 
 
-    def _unfold_filter(self, filter):
-        m = filter
+    def _unfold_filter(self):
+        m = self.filter
         for d in reversed(range(1, self.ndim)):
-            m = pad(m, d, self._id[d] - 1, 0)
-        end_idx = [s - 1 for s in filter.shape]
-        key_idx = [(s - 1) // 2 for s in self._fd]
+            m = pad(m, d, self.input_sz[d] - 1, 0)
+        end_idx = [s - 1 for s in self.filter_sz]
+        key_idx = mmc.center_index(self.filter_sz)
         end = linidx(list(m.shape), end_idx) 
         key = linidx(list(m.shape), key_idx)
         return m.reshape(-1)[:end + 1], key
@@ -64,21 +72,19 @@ class Fold(object):
 
     def make_mask(self):
         v = np.array([True])
-        partial_stride = []
-        masked_sz = []
-        for d in range(self.ndim):
-            m, p = mmc.make_mask(self._id[d], self._fd[d], self.stride[d], self.pad[d])
+        for m in self.mask:
             v = np.concatenate(list(map(lambda b: v & b, m)))
-            partial_stride.append(p)
-            masked_sz.append(len(np.where(m)[0]))
-        return v, partial_stride, masked_sz
+        return v
+
+    def conv_size(self):
+        return list(map(lambda m: len(np.where(m)[0]), self.mask))
 
 
-    def make_matrix(self, filter):
-        filter_vals, ki = self._unfold_filter(filter)
+    def make_matrix(self):
+        filter_vals, ki = self._unfold_filter()
         filter_vals = filter_vals.tolist()
         tmp_filter_sz = len(filter_vals)
-        is_mask = self._input_spacer_mask()
+        is_mask = self.input_spacer_mask()
         tmp_matrix_sz = len(is_mask)
         loff = tmp_matrix_sz - ki - 1
         roff = tmp_matrix_sz - tmp_filter_sz + ki
@@ -96,4 +102,16 @@ class Fold(object):
         tmp_mat = np.array(cells).reshape(tmp_matrix_sz, tmp_matrix_sz)
         mat = tmp_mat[is_mask,:][:,is_mask]
         return mat
+
+
+    def conv(self, input):
+        matrix = self.make_matrix()
+        mask = self.make_mask()
+        input_flat = input.reshape(-1)
+        mm_conv_flat = mmc.do_mask(np.matmul(matrix, input_flat), mask)
+        mm_conv = mm_conv_flat.reshape(self.conv_size())
+        mm_convt_flat = np.matmul(np.transpose(matrix, (1, 0)), mmc.un_mask(mm_conv_flat, mask))  
+        mm_convt = mm_convt_flat.reshape(self.input_sz)
+        return mm_conv, mm_convt
+
 

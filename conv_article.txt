@@ -1,44 +1,29 @@
 A Matrix Multiplication view of Convolutions
 
-In this note, I show that 1D convolutions and transpose convolutions calculated
-by PyTorch and TensorFlow can be replicated by simply multiplying the input by
-a sparse square matrix.  Optionally, the input or output is processed by a
-mask. 
+In this note, I show that convolutions calculated by PyTorch and TensorFlow can be replicated by multiplying the input by a sparse square matrix, followed by filtering output elements with a mask.  And, transpose convolutions are replicated by pre-processing input by a mask, followed by multiplication by a sparse square matrix.
 
 [The Matrix]
 
-The matrix is a sparse square matrix, with one copy of the filter elements
-on each row, centered around the diagonal.  For a filter like this:
+The matrix is a sparse square matrix, with one copy of the filter elements on each row. A "key" element in the filter is chosen, and each row of the matrix positions this key filter element at each position in the input.  The matrix thus has these key elements on its diagonal.  For a filter like this:
 
-[filter.png]
+X [filter.png]
 [1D convolution filter]
-
-This matrix is constructed from a filter, and choice of filter 'center'
-element.
-
-matrix = make_matrix(matrix_sz=10, filter=[1,2,3,2,1], filter_center=2)
 
 the resulting matrix is:
 
-[mat.png]
+X [mat.png]
 [square matrix with filter weights scanned across each row]
 
+matrix = make_matrix(matrix_sz=10, filter=[1,2,3,2,1], filter_center=2)
 
-Multiplying this matrix by a vector of input elements is equivalent to
-positioning the center of the filter on each input element and performing the
-convolution, collecting the output.  After all, a single convolution is just a
-dot product, and a matrix multiplication is a dot product of each row with the
-input.
+Multiplying this matrix by a vector of input elements is equivalent to positioning the center of the filter on each input element and performing the convolution, collecting the output.  After all, a single convolution is just a dot product, and a matrix multiplication is a dot product of each row with the input.
 
-Choice of stride and padding strategy determine which of these convolutions
-will be discarded, or 'down-sampled'.  Filtering output elements with a mask
-does this:
+Choice of stride and padding strategy determine which of these convolutions will be discarded, or 'down-sampled'.  Filtering output elements with a mask does this:
 
 conv_full = np.matmul(matrix, input)
 conv_downsampled = do_mask(conv_full, mask) 
 
-In contrast to a regular convolution, transpose convolution first 'up-samples'
-the input with the mask and then does matrix multiplication:
+In contrast to a regular convolution, transpose convolution first 'up-samples' the input with the mask and then does matrix multiplication with the transpose of the filter matrix:
 
 input_upsampled = un_mask(input, mask)
 conv = np.matmul(np.transpose(matrix, (1, 0)), input_upsampled)
@@ -57,116 +42,94 @@ def un_mask(ary, mask):
     it = iter(ary)
     return np.array([next(it) if m else 0 for m in mask])
 
-[mask_unmask.jpg]
+X [mask_unmask.png]
 
-When chained together, shape is restored, although some values are replaced
-with zeros.  In this diagram, hollow circles represent zeros, hollow squares
-represent False values in the mask.
+When a do_mask and then un_mask are chained together, shape is restored, although some values are replaced with zeros.  In this diagram, hollow circles represent zeros, hollow squares represent False values in the mask.
 
 [Mask construction from Stride, Filter length and Padding]
 
-The mask is constructed in three regions.  On the left is a region of False
-elements of length left_filter - left_padding.   On the right is a similar
-False region of length right_filter - right_padding.  Both of these regions
-represent places where the filter overhangs the padded input. In the middle is
-a set of single True values intercalated by stretches of False values of length
-stride - 1.
+Each False element in the mask means the corresponding convolution result in the output is either invalid due to filter overhanging the padded input, or to be skipped due to stride.  
 
-[mask_regions.jpg]
+TensorFlow allows 'VALID' and 'SAME' padding strategies.  'VALID' means that only filter positions that are completely covered by the input are considered.  In this case, no padding is applied, thus the positions on either end of the input are filtered out.  In the matrix/mask approach, those positions will be False in the mask.
 
-The quantities left_filter and right_filter are defined in the following way.
-By convention, we take the center of a filter to be the central element for
-odd-length filters, and the right-of-center element for even-length filters.
-The center element is what's placed on the diagonal of the matrix.
+For SAME padding, TensorFlow adds a number of padding elements so that every on-stride position can be used.  When this number is odd, the right side of the input gets one more than the left.  (see tensorflow/core/framework/common_shape_fns.cc:20).  This is the equivalent of a mask with all True, and the key filter element chosen to be left-of-center in the case of odd-length filters.
 
-[filter_flanks.jpg]
+PyTorch adds a user-provided number of elements to both left and right. 
+
+[valid_mask.png]
+[mask for filter length 5, VALID padding, stride=2]
+
+[same_mask.png]
+[mask for filter length 5, SAME padding, stride=2]
+
 
 [Dilation only affects the matrix]
 
-The default choice of dilation = 1 means the filter is left untouched.
-Dilation > 1 means the filter is augmented with (dilation - 1) zero elements
-between each input element.  This affects only the matrix.  The mask is
-affected only in the sense that the dilated filter is larger, so more padding
-must be applied to make the edge positions considered valid.
+The default choice of dilation = 1 means the filter is left untouched.  Dilation > 1 means the filter is augmented with dilation - 1 zero elements between each input element.  This affects only the matrix.  The mask is affected in the case of VALID padding strategy, when more positions on the left and right ends will be False due to an overhanging filter.  
 
-[dilation2_matrix.jpg]
+X [dilated_mat.png]
 [Example of a matrix of dilation 2]
-
-Other than this, the matrix/mask approach is identical for convolutions and
-transpose convolutions.
-
 
 [(Almost) Complete example]
 
-So, we can take input, filter, padding strategy, and stride to construct a
-matrix and a mask.  Then, use the matrix and mask to perform both a convolution
-and a transpose convolution.  Finally, show that this matrix/mask approach produces
-identical results as PyTorch and TensorFlow:
+So, we can take input, filter, padding strategy, and stride to construct a matrix and a mask.  Then, use the matrix and mask to perform both a convolution and a transpose convolution.  Finally, show that this matrix/mask approach produces identical results as PyTorch and TensorFlow:
 
 mask = make_mask(len(input), len(filter), stride, padding)
 matrix = make_matrix(len(input), filter) 
 mm_conv = do_mask(np.matmul(matrix, input), mask)
 mm_convt = np.matmul(np.transpose(matrix, (1, 0)), un_mask(mm_conv, mask))
-assert len(input) == len(mm_convt)
 
 # Compare matrix/mask results with PyTorch
-th_conv = un_wrap(F.conv1d(do_wrap(input), wrap(filter), None, stride, padding, dilation, 1))
-th_convt = un_wrap(F.conv_transpose1d(wrap(th_conv), wrap(filter), None,
-    stride, padding, output_padding, groups=1, dilation))
+th_conv = F.conv1d(input, filter, None, stride, padding, dilation, 1)
+th_convt = F.conv_transpose1d(th_conv, filter, None,
+    stride, padding, output_padding, groups=1, dilation)
 
 assert all(mm_conv == th_conv)
 assert all(mm_convt == th_convt)
 
 # Compare matrix/mask results with TensorFlow 
-tf_conv = un_wrap(tf.nn.convolution(wrap(input), wrap(filter), padding, [stride], [dilation]))
-output_shape = tf.constant([1, len(input), 1]) 
 dilated_filter = dilate_array(filter, dilation)
-tf_convt = un_wrap(tf.contrib.nn.conv1d_transpose(wrap(tf_conv), wrap(dilated_filter),
-    output_shape, stride, padding))
+tf_conv = tf.nn.conv1d(input, dilated_filter, padding, stride)
+output_shape = tf.constant([1, len(input), 1]) 
+tf_convt = tf.contrib.nn.conv1d_transpose(tf_conv, dilated_filter,
+    output_shape, stride, padding)
 
 assert all(mm_conv == tf_conv)
 assert all(mm_convt == tf_convt)
 
-This experiment works for a large range of input sizes, filter sizes, stride,
-padding, and dilation.  A small wrinkle is that TensorFlow's conv1d_transpose
-doesn't support dilations > 1 if stride > 1.  But, we can simulate that by
-pre-constructing a dilated filter.  Another wrinkle is that TensorFlow supports
-padding types 'VALID' and 'SAME', while PyTorch accepts a single integer
-padding.  For even-length filters, this means that it is impossible to produce
-a logically 'SAME' padding for every possible input element.
+This experiment works for a large range of input sizes, filter sizes, stride, padding, and dilation.  A small wrinkle is that TensorFlow's conv1d_transpose doesn't support dilations > 1 if stride > 1.  But, we can simulate that by pre-constructing a dilated filter.  Another wrinkle is that TensorFlow supports padding types 'VALID' and 'SAME', while PyTorch accepts a single integer padding.  This means it is sometimes impossible to produce the same convolution result between PyTorch and TensorFlow.  However, the matrix/mask approach is more universal; it can replicate both PyTorch and TensorFlow results.
 
 [Generalizing to higher spatial dimensions]
 
-I've illustrated that PyTorch and TensorFlow's convolutions and transpose
-convolutions in one spatial dimension are mathematically equivalent to the
-matrix/mask approach.  It turns out that this is true in two or more spatial
-dimensions by first "unwrapping" both the filter and input into one dimension.
+I've illustrated that PyTorch and TensorFlow's convolutions and transpose convolutions in one spatial dimension are mathematically equivalent to the matrix/mask approach.  It turns out that this is true in two or more spatial dimensions by first "unwrapping" both the filter and input into one dimension.  I've done this experiment at https://github.com/hrbigelow/ml-tests.  This uses TensorFlow's functions:
+
+tf.nn.conv1d with tf.contrib.nn.conv1d_transpose
+tf.nn.conv2d with tf.nn.conv2d_transpose
+tf.nn.conv3d with tf.nn.conv3d_transpose
+
+and PyTorch's functions (F = torch.nn.functional):
+
+F.conv1d and F.conv_transpose1d
+F.conv2d and F.conv_transpose2d
+F.conv3d and F.conv_transpose3d
+
+The procedure for dimensions > 1 is to first unfold the input into one dimension, using row major ordering.  For any shape, this unfolding follows numpy's:
+
+input.reshape(-1)
+
+Filter elements occupy the same coordinate space.  Therefore, matrix construction of such a convolution is the same as in one dimension.  The key element of a filter is chosen as the element in the center (or just left of center, for even-size) in each dimension.  The one-to-one correspondence of output elements is defined by which input element the key element is positioned on.  And, the set of output elements retained is defined by the mask.  
+
+In TensorFlow, stride can be applied independently in each spatial dimension, while padding strategy must be either 'SAME' or 'VALID' for all dimensions.  It turns out that the multi-dimensional mask is just the cartesian product of single-dimensional masks, using logical AND to combine them.
+
+The full details are defined in the https://github.com/hrbigelow/ml-tests repository.
 
 [Input and Output channels]
 
-In this discussion I said that a single convolution is a dot product between
-filter elements and input elements.  But, a dot product is just the sum of
-pairwise multiplied elements.  One pair could be a scalar filter element and
-scalar input element.  Or, it could be a matrix filter element and vector input
-element.  Then the multiplication is just matrix-vector multiplication, and the
-final addition is just vector-vector addition.  Either way, nothing about the
-higher level organization of this is changed.
+In this discussion I said that a single convolution is a dot product between filter elements and input elements.  But, a dot product is just the sum of pairwise multiplied elements.  One pair could be a scalar filter element and scalar input element.  Or, it could be a matrix filter element and vector input element.  Then the multiplication is just matrix-vector multiplication, and the final addition is just vector-vector addition.  Either way, nothing about the higher level organization of this is changed.
 
+[Conclusion and perspective]
 
-[Some perspective]
+One nice feature of this view of convolution or transposed convolution is that it defines a correspondence between input and output elements.  Both the choice of stride and padding affect the number of output elements produced.  But, this correspondence makes clear which elements are omitted or up-sampled due to stride or edge effects. 
 
-One nice feature of this view of convolution or transposed convolution is that
-it defines a correspondence between input and output elements.  Both the choice
-of stride and padding affect the number of output elements produced.  But, this
-correspondence makes clear which elements are omitted (or up-sampled) due to
-stride or edge effects. 
-
-For instance, here are masks for two convolutions (T = True, _ = False):
-
-[_, _, T, _, T, _, T, _, T, _, _, _] # stride 2, padding VALID
-
-[_, T, _, _, T, _, _, T, _, _, T, _] # stride 3, padding SAME
-
-Both of these cases give four output elements.  But we can see at a glance the
-difference in where the information derives. 
+This also made me realize that the notion of stride is restrictive in that it only allows up-sampling or down-sampling at integer multiples.  Thinking in terms of the mask, we can see that arbitrary sampling patterns are in theory possible. 
 

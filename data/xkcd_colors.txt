@@ -1,0 +1,7 @@
+xkcd:silver
+xkcd:black
+xkcd:raw sienna
+xkcd:marigold
+xkcd:dark grass green
+xkcd:denim blue
+xkcd:red orange

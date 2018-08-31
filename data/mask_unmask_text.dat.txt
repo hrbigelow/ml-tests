@@ -1,0 +1,9 @@
+0	6	14	Input	80	center	top
+1	6	14	Mask	80	center	top
+2	6	14	Conv	80	center	top
+3	6	14	Mask	80	center	top
+4	6	14	TConv	80	center	top
+5.5	-5	12	True	0	left	center
+5.5	-4.2	12	False	0	left	center
+5.5	-3.4	12	Retained value	0	left	center
+5.5	-2.6	12	Zeroed value	0	left	center

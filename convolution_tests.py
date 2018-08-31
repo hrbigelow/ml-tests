@@ -128,41 +128,40 @@ if __name__ == '__main__':
         'TCONV_EQ', mask_hdr, 'FILT'))
 
     api_mode = 'Torch'
-    if True:
-    #if False:
-        for f_sz in range(1, args.filter_size_max + 1):
-            for st in range(1, args.stride_max + 1):
-                for pad in range((f_sz - 1) // 2 + 1):
-                    for dil in range(1, args.dilation_max + 1):
-                    # for dil in range(1, 1):
-                        i_szs = [args.input_size] * args.ndims
-                        f_szs = [f_sz] * args.ndims
-                        sts = [st] * args.ndims
-                        pads = [pad] * args.ndims
-                        dils = [dil] * args.ndims
+    row = 1
+    for f_sz in range(1, args.filter_size_max + 1):
+        for st in range(1, args.stride_max + 1):
+            for pad in range((f_sz - 1) // 2 + 1):
+                for dil in range(1, args.dilation_max + 1):
+                # for dil in range(1, 1):
+                    i_szs = [args.input_size] * args.ndims
+                    f_szs = [f_sz] * args.ndims
+                    sts = [st] * args.ndims
+                    pads = [pad] * args.ndims
+                    dils = [dil] * args.ndims
 
-                        # we ignore the dilated_filter returned.  torch handles
-                        # dilation itself, and Fold stores its own copy.
-                        input, filter, _, fo = \
-                                prepare_inputs(i_szs, f_szs, sts, pads, dils, max_val, api_mode)
-                        mm_conv, mm_convt = fo.conv(input) 
-                        # mm_conv, mm_convt = mmc.conv(input, matrix, mask)
-                        out_pad = fo.partial_stride
-                        torch_conv, torch_convt = \
-                                torch_do_conv(input, filter, sts, pads, out_pad, dils)
-                        eq = mmc.array_equal(mm_conv, torch_conv)
-                        teq = mmc.array_equal(mm_convt, torch_convt)
-                        conv_sz = list(mm_conv.shape)
-                        convt_sz = list(mm_convt.shape)
-                        mask_fields = '\t'.join([mmc.mask_repr(m) for m in fo.mask])
-                        print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
-                            api_mode, str(f_sz), str(sts), str(pads), str(dils),
-                            str(conv_sz), str(convt_sz), eq, teq, 
-                            mask_fields, mmc.filter_repr(fo.filter.reshape(-1))))
+                    # we ignore the dilated_filter returned.  torch handles
+                    # dilation itself, and Fold stores its own copy.
+                    input, filter, _, fo = \
+                            prepare_inputs(i_szs, f_szs, sts, pads, dils, max_val, api_mode)
+                    mm_conv, mm_convt = fo.conv(input) 
+                    # mm_conv, mm_convt = mmc.conv(input, matrix, mask)
+                    out_pad = fo.partial_stride
+                    torch_conv, torch_convt = \
+                            torch_do_conv(input, filter, sts, pads, out_pad, dils)
+                    eq = mmc.array_equal(mm_conv, torch_conv)
+                    teq = mmc.array_equal(mm_convt, torch_convt)
+                    conv_sz = list(mm_conv.shape)
+                    convt_sz = list(mm_convt.shape)
+                    mask_fields = '\t'.join([mmc.mask_repr(m) for m in fo.mask])
+                    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
+                        row, api_mode, str(f_sz), str(sts), str(pads), str(dils),
+                        str(conv_sz), str(convt_sz), eq, teq, 
+                        mask_fields, mmc.filter_repr(fo.filter.reshape(-1), 30)))
+                    row += 1
 
 
     api_mode = 'TensorFlow'
-    row = 1
     for f_sz in range(1, args.filter_size_max + 1):
         for st in range(1, args.stride_max + 1):
             for pad in ('SAME', 'VALID'):
@@ -189,7 +188,7 @@ if __name__ == '__main__':
                     print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
                         row, api_mode, str(f_sz), str(sts), pad, str(dils), str(conv_sz),
                         str(convt_sz), eq, teq, mask_fields,
-                        mmc.filter_repr(fo.filter.reshape(-1)[:30]) + ' ]'))
+                        mmc.filter_repr(fo.filter.reshape(-1), 30)))
                     row += 1
 
 

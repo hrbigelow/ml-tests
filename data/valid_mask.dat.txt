@@ -1,0 +1,15 @@
+0	0	14	1	s	none
+1	0	14	1	s	none
+2	0	14	1	s	full
+3	0	14	1	s	none
+4	0	14	1	s	full
+5	0	14	1	s	none
+6	0	14	1	s	full
+7	0	14	1	s	none
+8	0	14	1	s	full
+9	0	14	1	s	none
+10	0	14	1	s	full
+11	0	14	1	s	none
+12	0	14	1	s	full
+13	0	14	1	s	none
+14	0	14	1	s	none

@@ -52,23 +52,6 @@ def get_padding(pad, input_sz, filter_sz, stride):
         return pad, pad
 
 
-def make_matrix(matrix_sz, filter):
-    ''' outputs: mat (input_sz x input_sz)
-        use as: conv_raw = np.matmul(mat, input) 
-    '''
-    filter = filter.tolist()
-    filter_sz = len(filter)
-    c = center_index(filter_sz)
-    left_zeros = matrix_sz - c - 1
-    right_zeros = matrix_sz - filter_sz + c
-    values = [0] * left_zeros + filter + [0] * right_zeros 
-
-    cells = []
-    for i in reversed(range(matrix_sz)):
-        cells += values[i:i + matrix_sz]
-
-    return np.array(cells).reshape(matrix_sz, matrix_sz)
-
 # TensorFlow's VALID padding scheme puts more padding on the right if the total
 # padding needed is odd-lengthed.  This choice corresponds with a center_index
 # that is left-of-center.
@@ -108,14 +91,14 @@ def make_mask(input_sz, filter_sz, stride, padding_code, api_mode):
 def mask_repr(mask):
     return ''.join(list(map(lambda x: 'T' if x else '_', mask)))
 
-def filter_repr(filt):
-    return ''.join(list(map(lambda x: '*' if x else '-', filt)))
+def filter_repr(filt, limit):
+    full = ''.join(list(map(lambda x: '*' if x else '-', filt)))
+    if len(full) > limit:
+        return full[:limit] + ' ]'
+    else:
+        return full
+
 
 def array_equal(a, b):
     return a.shape == b.shape and (a == b).all()
-
-def conv(input, matrix, mask):
-    mm_conv = do_mask(np.matmul(matrix, input), mask)
-    mm_convt = np.matmul(np.transpose(matrix, (1, 0)), un_mask(mm_conv, mask))
-    return mm_conv, mm_convt
 

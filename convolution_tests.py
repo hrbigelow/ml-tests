@@ -122,10 +122,9 @@ if __name__ == '__main__':
 
     mask_hdr = '\t'.join(['MASK{}'.format(i) for i in range(args.ndims)])
 
-    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
-        'LINE_NO', 'API-------', 'FILT_SZ',
-        'STRIDE', 'PAD', 'DIL', 'CONV_SZ', 'TCONV_SZ', 'CONV_EQ',
-        'TCONV_EQ', mask_hdr, 'FILT'))
+    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
+        'LINE_NO', 'API-------', 'FILT_SZ', 'STRIDE', 'PAD', 'OUT_PAD', 'DIL',
+        'CONV_SZ', 'TCONV_SZ', 'CONV_EQ', 'TCONV_EQ', mask_hdr, 'FILT'))
 
     api_mode = 'Torch'
     row = 1
@@ -154,10 +153,11 @@ if __name__ == '__main__':
                     conv_sz = list(mm_conv.shape)
                     convt_sz = list(mm_convt.shape)
                     mask_fields = '\t'.join([mmc.mask_repr(m) for m in fo.mask])
-                    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
-                        row, api_mode, str(f_sz), str(sts), str(pads), str(dils),
-                        str(conv_sz), str(convt_sz), eq, teq, 
-                        mask_fields, mmc.filter_repr(fo.filter.reshape(-1), 30)))
+                    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
+                        row, api_mode, str(f_sz), str(sts), str(pads),
+                        str(out_pad), str(dils), str(conv_sz), str(convt_sz),
+                        eq, teq, mask_fields,
+                        mmc.filter_repr(fo.filter.reshape(-1), 30)))
                     row += 1
 
 
@@ -185,8 +185,8 @@ if __name__ == '__main__':
                     conv_sz = list(mm_conv.shape)
                     convt_sz = list(mm_convt.shape)
                     mask_fields = '\t'.join([mmc.mask_repr(m) for m in fo.mask])
-                    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
-                        row, api_mode, str(f_sz), str(sts), pad, str(dils), str(conv_sz),
+                    print('{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(
+                        row, api_mode, str(f_sz), str(sts), pad, '---', str(dils), str(conv_sz),
                         str(convt_sz), eq, teq, mask_fields,
                         mmc.filter_repr(fo.filter.reshape(-1), 30)))
                     row += 1

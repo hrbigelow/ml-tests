@@ -1,0 +1,41 @@
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 512
+finished Dilated Conv in 1.5840 seconds
+finished Strided Conv in 0.7872 seconds
+finished Dilated Conv Script in 1.4235 seconds
+finished Strided Conv Script in 0.7877 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 64
+finished Dilated Conv in 1.0272 seconds
+finished Strided Conv in 0.8059 seconds
+finished Dilated Conv Script in 0.9143 seconds
+finished Strided Conv Script in 0.8050 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 32
+finished Dilated Conv in 0.9502 seconds
+finished Strided Conv in 0.8112 seconds
+finished Dilated Conv Script in 0.8325 seconds
+finished Strided Conv Script in 0.8116 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 16
+finished Dilated Conv in 0.9832 seconds
+finished Strided Conv in 0.7935 seconds
+finished Dilated Conv Script in 0.7912 seconds
+finished Strided Conv Script in 0.7947 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 8
+finished Dilated Conv in 0.8671 seconds
+finished Strided Conv in 0.7981 seconds
+finished Dilated Conv Script in 0.7700 seconds
+finished Strided Conv Script in 0.7944 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 4
+finished Dilated Conv in 0.8756 seconds
+finished Strided Conv in 0.7994 seconds
+finished Dilated Conv Script in 0.7477 seconds
+finished Strided Conv Script in 0.7979 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 2
+finished Dilated Conv in 0.8467 seconds
+finished Strided Conv in 0.7716 seconds
+finished Dilated Conv Script in 0.7306 seconds
+finished Strided Conv Script in 0.7973 seconds
+(pytorch) henry@henry-gs65:ml-tests$ python dconv_vs_slice.py 10000 1
+finished Dilated Conv in 0.8958 seconds
+finished Strided Conv in 0.7934 seconds
+finished Dilated Conv Script in 0.7925 seconds
+finished Strided Conv Script in 0.7898 seconds
+(pytorch) henry@henry-gs65:ml-tests$ 
